@@ -1,0 +1,43 @@
+# Gopier設定ファイル例
+# このファイルを ~/.gopier.yaml にコピーしてカスタマイズしてください
+
+# 基本設定
+# source: "/path/to/source"  # コピー元ディレクトリ（コマンドラインで指定することを推奨）
+# destination: "/path/to/dest"  # コピー先ディレクトリ（コマンドラインで指定することを推奨）
+log_file: ""  # ログファイルのパス（空の場合は標準出力）
+
+# パフォーマンス設定
+workers: 4  # 並列ワーカー数（デフォルト: CPUコア数）
+buffer_size: 8  # バッファサイズ（MB）
+retry_count: 3  # エラー時のリトライ回数
+retry_wait: 5  # リトライ間の待機時間（秒）
+
+# フィルタ設定
+include_pattern: ""  # 含めるファイルパターン（例: "*.txt,*.docx"）
+exclude_pattern: "*.tmp,*.bak,*.swp"  # 除外するファイルパターン
+
+# 動作設定
+recursive: true  # サブディレクトリを再帰的にコピー
+mirror: false  # ミラーモード（宛先にない元ファイルを削除）
+dry_run: false  # ドライラン（実際にはコピーしない）
+verbose: false  # 詳細なログ出力
+skip_newer: false  # 宛先の方が新しい場合はスキップ
+no_progress: false  # 進捗表示を無効化
+preserve_mod_time: true  # 更新日時を保持
+overwrite_existing: true  # 既存ファイルを上書き
+
+# 同期設定
+sync_mode: "normal"  # 同期モード (normal, initial, incremental)
+sync_db_path: "sync_state.db"  # 同期状態データベースのパス
+include_failed: true  # 前回までに失敗したファイルも同期する
+max_fail_count: 5  # 最大失敗回数（これを超えるとスキップ、0は無制限）
+
+# 検証設定
+verify_only: false  # コピーせずに検証のみを実行
+verify_changed: false  # 同期したファイルのみハッシュ検証を実行
+verify_all: false  # すべてのファイルのハッシュ検証を実行（最終検証）
+final_report: ""  # 最終検証レポートの出力パス
+
+# ハッシュ設定
+hash_algorithm: "sha256"  # ハッシュアルゴリズム (md5, sha1, sha256, sha512)
+verify_hash: true  # ハッシュ検証を行う 

@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run tests with coverage
+        run: |
+          go test -v -coverprofile=coverage.out -covermode=atomic ./...
+          go test -v -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: release
+          name: codecov-release
+          fail_ci_if_error: false
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  build:
+    runs-on: ${{ matrix.os }}
+    needs: test
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: gopier-linux-amd64
+            binary_name: gopier
+            goarch: amd64
+          - os: windows-latest
+            artifact_name: gopier-windows-amd64.exe
+            binary_name: gopier.exe
+            goarch: amd64
+          - os: macos-latest
+            artifact_name: gopier-darwin-amd64
+            binary_name: gopier
+            goarch: amd64
+          - os: macos-latest
+            artifact_name: gopier-darwin-arm64
+            binary_name: gopier
+            goarch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Build
+        run: |
+          GOARCH=${{ matrix.goarch }} go build -ldflags="-s -w" -o ${{ matrix.binary_name }} .
+          chmod +x ${{ matrix.binary_name }}
+
+      - name: Create release assets
+        run: |
+          mkdir -p release
+          cp ${{ matrix.binary_name }} release/
+          cp config.example.yaml release/
+          cp README.md release/
+          cp LICENSE release/
+          
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cd release
+            7z a ../${{ matrix.artifact_name }}.zip *
+            cd ..
+          else
+            tar -czf ${{ matrix.artifact_name }}.tar.gz -C release .
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            gopier-linux-amd64/*.tar.gz
+            gopier-windows-amd64/*.zip
+            gopier-darwin-amd64/*.tar.gz
+            gopier-darwin-arm64/*.tar.gz
+          generate_release_notes: true
+          draft: false
+          prerelease: false 

@@ -1,0 +1,89 @@
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# Build output
+gopier
+dist/
+build/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor files
+
+# Cursor
+.cursor/
+.cursorrules
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains IDEs (IntelliJ IDEA, GoLand, etc.)
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea_modules/
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory
+coverage/
+*.lcov
+
+# Temporary folders
+tmp/
+temp/
+
+# Local configuration files
+config.yaml
+config.yml
+*.local.yaml
+*.local.yml
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.bolt
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Documentation build
+docs/_build/
+site/
+
+# Test artifacts
+testdata/temp/
+testdata/output/ 
