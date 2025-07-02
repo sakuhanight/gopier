@@ -27,8 +27,8 @@ jobs:
 
       - name: Setup GPG
         run: |
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
-          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --passphrase-fd 0 --pinentry-mode loopback --edit-key "${{ secrets.GPG_KEY_ID }}" trust
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          gpg --list-keys
 
       - name: Sign artifacts
         run: |
@@ -36,7 +36,7 @@ jobs:
           for file in *.tar.gz *.zip; do
             if [ -f "$file" ]; then
               echo "Signing $file..."
-              gpg --batch --yes --detach-sign --armor "$file"
+              echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --passphrase-fd 0 --pinentry-mode loopback --detach-sign --armor "$file"
               echo "Created signature: $file.asc"
             fi
           done

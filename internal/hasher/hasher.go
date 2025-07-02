@@ -109,9 +109,18 @@ func (h *Hasher) VerifyFileHash(filePath, expectedHash string) (bool, error) {
 // HashDirectory はディレクトリ内の全ファイルのハッシュを計算する
 // 戻り値はファイルパス（ベースディレクトリからの相対パス）をキー、ハッシュ値を値とするマップ
 func (h *Hasher) HashDirectory(dirPath string, recursive bool) (map[string]string, error) {
+	// 追加: ディレクトリかどうかチェック
+	info, err := os.Stat(dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("パスの確認に失敗: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("指定されたパスはディレクトリではありません: %s", dirPath)
+	}
+
 	results := make(map[string]string)
 
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -153,6 +162,22 @@ func (h *Hasher) HashDirectory(dirPath string, recursive bool) (map[string]strin
 // CompareDirectories は2つのディレクトリのファイルハッシュを比較する
 // 戻り値は不一致ファイルのリスト、エラー
 func (h *Hasher) CompareDirectories(sourceDir, destDir string, recursive bool) ([]string, error) {
+	// 追加: ディレクトリかどうかチェック
+	info1, err := os.Stat(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("ソースパスの確認に失敗: %w", err)
+	}
+	if !info1.IsDir() {
+		return nil, fmt.Errorf("ソースパスはディレクトリではありません: %s", sourceDir)
+	}
+	info2, err := os.Stat(destDir)
+	if err != nil {
+		return nil, fmt.Errorf("宛先パスの確認に失敗: %w", err)
+	}
+	if !info2.IsDir() {
+		return nil, fmt.Errorf("宛先パスはディレクトリではありません: %s", destDir)
+	}
+
 	// ソースディレクトリのハッシュを計算
 	sourceHashes, err := h.HashDirectory(sourceDir, recursive)
 	if err != nil {

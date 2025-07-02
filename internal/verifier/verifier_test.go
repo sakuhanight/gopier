@@ -514,6 +514,163 @@ func TestCheckExtraFiles(t *testing.T) {
 	}
 }
 
+// TestCheckExtraFiles_EdgeCases はcheckExtraFiles関数のエッジケースをテスト
+func TestCheckExtraFiles_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 宛先にのみ存在するファイルを作成
+	extraFile := filepath.Join(destDir, "extra.txt")
+	os.WriteFile(extraFile, []byte("extra content"), 0644)
+
+	// サブディレクトリにのみ存在するファイル
+	extraSubDir := filepath.Join(destDir, "subdir")
+	os.MkdirAll(extraSubDir, 0755)
+	extraSubFile := filepath.Join(extraSubDir, "extra_sub.txt")
+	os.WriteFile(extraSubFile, []byte("extra sub content"), 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 通常のチェック（IgnoreExtra=false）
+	err := verifier.checkExtraFiles(sourceDir, destDir)
+	if err != nil {
+		t.Errorf("余分なファイルのチェックでエラーが発生しました: %v", err)
+	}
+	// 結果を確認
+	results := verifier.GetResults()
+	if len(results) == 0 {
+		t.Error("余分なファイルが検出されませんでした")
+	}
+
+	// IgnoreExtra=trueの場合
+	options.IgnoreExtra = true
+	verifier2 := NewVerifier(sourceDir, destDir, options, nil, nil)
+	err = verifier2.checkExtraFiles(sourceDir, destDir)
+	if err != nil {
+		t.Errorf("IgnoreExtra=trueの場合にエラーが発生しました: %v", err)
+	}
+
+	// 空のディレクトリ
+	emptyDestDir := filepath.Join(tempDir, "empty_dest")
+	os.MkdirAll(emptyDestDir, 0755)
+	verifier3 := NewVerifier(sourceDir, emptyDestDir, options, nil, nil)
+	err = verifier3.checkExtraFiles(sourceDir, emptyDestDir)
+	if err != nil {
+		t.Errorf("空のディレクトリでエラーが発生しました: %v", err)
+	}
+}
+
+// TestVerifyFile_EdgeCases はverifyFile関数のエッジケースをテスト
+func TestVerifyFile_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	testContent := "test content"
+	os.WriteFile(testFile, []byte(testContent), 0644)
+
+	// 宛先にも同じファイルを作成
+	destFile := filepath.Join(destDir, "test.txt")
+	os.WriteFile(destFile, []byte(testContent), 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 正常な検証
+	result, err := verifier.verifyFile(testFile, destFile)
+	if err != nil {
+		t.Errorf("正常な検証が失敗: %v", err)
+	}
+	if result == nil {
+		t.Error("結果がnilです")
+	}
+
+	// ソースファイルが存在しない場合
+	result, err = verifier.verifyFile(filepath.Join(sourceDir, "nonexistent.txt"), filepath.Join(destDir, "nonexistent.txt"))
+	if err != nil {
+		t.Errorf("存在しないソースファイルでエラーが発生しました: %v", err)
+	}
+	if result == nil {
+		t.Error("結果がnilです")
+	}
+
+	// 宛先ファイルが存在しない場合
+	os.Remove(destFile)
+	result, err = verifier.verifyFile(testFile, destFile)
+	if err != nil {
+		t.Errorf("存在しない宛先ファイルでエラーが発生しました: %v", err)
+	}
+	if result == nil {
+		t.Error("結果がnilです")
+	}
+
+	// IgnoreMissing=trueの場合
+	options.IgnoreMissing = true
+	verifier2 := NewVerifier(sourceDir, destDir, options, nil, nil)
+	result, err = verifier2.verifyFile(testFile, destFile)
+	if err != nil {
+		t.Errorf("IgnoreMissing=trueの場合にエラーが発生しました: %v", err)
+	}
+}
+
+// TestVerifyDirectory_EdgeCases はverifyDirectory関数のエッジケースをテスト
+func TestVerifyDirectory_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 空のディレクトリ
+	emptySourceDir := filepath.Join(sourceDir, "empty")
+	os.MkdirAll(emptySourceDir, 0755)
+	emptyDestDir := filepath.Join(destDir, "empty")
+	os.MkdirAll(emptyDestDir, 0755)
+
+	// シンボリックリンクを含むディレクトリ
+	symlinkSourceDir := filepath.Join(sourceDir, "symlink")
+	os.MkdirAll(symlinkSourceDir, 0755)
+	symlinkFile := filepath.Join(symlinkSourceDir, "link.txt")
+	os.Symlink(filepath.Join(sourceDir, "nonexistent.txt"), symlinkFile)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 空のディレクトリの検証
+	err := verifier.verifyDirectory(emptySourceDir, emptyDestDir)
+	if err != nil {
+		t.Errorf("空のディレクトリの検証が失敗: %v", err)
+	}
+
+	// シンボリックリンクを含むディレクトリの検証
+	err = verifier.verifyDirectory(symlinkSourceDir, filepath.Join(destDir, "symlink"))
+	if err != nil {
+		t.Errorf("シンボリックリンクを含むディレクトリの検証が失敗: %v", err)
+	}
+
+	// 存在しないディレクトリ
+	err = verifier.verifyDirectory(filepath.Join(sourceDir, "nonexistent"), filepath.Join(destDir, "nonexistent"))
+	if err == nil {
+		t.Error("存在しないディレクトリでエラーが発生しませんでした")
+	}
+
+	// 非再帰モード
+	options.Recursive = false
+	verifier2 := NewVerifier(sourceDir, destDir, options, nil, nil)
+	err = verifier2.verifyDirectory(emptySourceDir, emptyDestDir)
+	if err != nil {
+		t.Errorf("非再帰モードでの検証が失敗: %v", err)
+	}
+}
+
 // TestGenerateReport はGenerateReportメソッドのテスト
 func TestGenerateReport(t *testing.T) {
 	// テスト用の一時ディレクトリを作成
@@ -568,6 +725,44 @@ func TestGenerateReport(t *testing.T) {
 
 	if !strings.Contains(contentStr, "abc123") {
 		t.Error("レポートにハッシュ値が含まれていません")
+	}
+}
+
+// TestGenerateReport_EdgeCases はGenerateReport関数のエッジケースをテスト
+func TestGenerateReport_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 結果がない場合のレポート生成
+	reportPath := filepath.Join(tempDir, "empty_report.txt")
+	err := verifier.GenerateReport(reportPath)
+	if err != nil {
+		t.Errorf("空の結果でのレポート生成が失敗: %v", err)
+	}
+
+	// エラー結果を含むレポート生成
+	errorResult := VerificationResult{
+		Path:  "error.txt",
+		Error: fmt.Errorf("テストエラー"),
+	}
+	verifier.addResult(errorResult)
+
+	reportPath2 := filepath.Join(tempDir, "error_report.txt")
+	err = verifier.GenerateReport(reportPath2)
+	if err != nil {
+		t.Errorf("エラー結果を含むレポート生成が失敗: %v", err)
+	}
+
+	// 無効なパスでのレポート生成
+	err = verifier.GenerateReport("/invalid/path/report.txt")
+	if err == nil {
+		t.Error("無効なパスでエラーが発生しませんでした")
 	}
 }
 

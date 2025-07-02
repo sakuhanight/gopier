@@ -491,3 +491,206 @@ func BenchmarkVerifyFileHash(b *testing.B) {
 		}
 	}
 }
+
+// TestHashDirectory_EdgeCases はHashDirectory関数のエッジケースをテスト
+func TestHashDirectory_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 空のディレクトリ
+	emptyDir := filepath.Join(tempDir, "empty")
+	os.MkdirAll(emptyDir, 0755)
+
+	// 複数のファイルを含むディレクトリ
+	multiFileDir := filepath.Join(tempDir, "multifile")
+	os.MkdirAll(multiFileDir, 0755)
+
+	// 異なるサイズのファイルを作成
+	files := []struct {
+		name    string
+		content string
+	}{
+		{"small.txt", "small content"},
+		{"medium.txt", "medium content " + string(make([]byte, 1000))},
+		{"large.txt", "large content " + string(make([]byte, 10000))},
+	}
+
+	for _, file := range files {
+		filePath := filepath.Join(multiFileDir, file.name)
+		err := os.WriteFile(filePath, []byte(file.content), 0644)
+		if err != nil {
+			t.Fatalf("テストファイルの作成に失敗: %v", err)
+		}
+	}
+
+	// サブディレクトリを含むディレクトリ
+	subDir := filepath.Join(multiFileDir, "subdir")
+	os.MkdirAll(subDir, 0755)
+	subFile := filepath.Join(subDir, "subfile.txt")
+	os.WriteFile(subFile, []byte("subdir content"), 0644)
+
+	hasher := NewHasher(SHA256, 1024)
+
+	// 空のディレクトリのハッシュ
+	emptyHash, err := hasher.HashDirectory(emptyDir, true)
+	if err != nil {
+		t.Errorf("空のディレクトリのハッシュ計算が失敗: %v", err)
+	}
+	// 空のディレクトリは空のマップを返す
+	if len(emptyHash) != 0 {
+		t.Error("空のディレクトリのハッシュが空ではありません")
+	}
+
+	// 複数ファイルを含むディレクトリのハッシュ
+	multiHash, err := hasher.HashDirectory(multiFileDir, true)
+	if err != nil {
+		t.Errorf("複数ファイルディレクトリのハッシュ計算が失敗: %v", err)
+	}
+	if len(multiHash) == 0 {
+		t.Error("複数ファイルディレクトリのハッシュが空です")
+	}
+
+	// 存在しないディレクトリ
+	_, err = hasher.HashDirectory(filepath.Join(tempDir, "nonexistent"), true)
+	if err == nil {
+		t.Error("存在しないディレクトリでエラーが発生しませんでした")
+	}
+
+	// ファイルをディレクトリとして指定（エラーが発生する）
+	_, err = hasher.HashDirectory(filepath.Join(multiFileDir, "small.txt"), true)
+	if err == nil {
+		t.Error("ファイルをディレクトリとして指定した場合にエラーが発生しませんでした")
+	}
+}
+
+// TestCompareDirectories_EdgeCases はCompareDirectories関数のエッジケースをテスト
+func TestCompareDirectories_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 同じ内容のディレクトリ
+	dir1 := filepath.Join(tempDir, "dir1")
+	dir2 := filepath.Join(tempDir, "dir2")
+	os.MkdirAll(dir1, 0755)
+	os.MkdirAll(dir2, 0755)
+
+	// 同じファイルを作成
+	testContent := "test content"
+	file1 := filepath.Join(dir1, "test.txt")
+	file2 := filepath.Join(dir2, "test.txt")
+	os.WriteFile(file1, []byte(testContent), 0644)
+	os.WriteFile(file2, []byte(testContent), 0644)
+
+	// 異なる内容のディレクトリ
+	dir3 := filepath.Join(tempDir, "dir3")
+	os.MkdirAll(dir3, 0755)
+	file3 := filepath.Join(dir3, "test.txt")
+	os.WriteFile(file3, []byte("different content"), 0644)
+
+	// 空のディレクトリ
+	emptyDir1 := filepath.Join(tempDir, "empty1")
+	emptyDir2 := filepath.Join(tempDir, "empty2")
+	os.MkdirAll(emptyDir1, 0755)
+	os.MkdirAll(emptyDir2, 0755)
+
+	hasher := NewHasher(SHA256, 1024)
+
+	// 同じ内容のディレクトリの比較
+	mismatches, err := hasher.CompareDirectories(dir1, dir2, false)
+	if err != nil {
+		t.Errorf("同じ内容ディレクトリの比較が失敗: %v", err)
+	}
+	if len(mismatches) > 0 {
+		t.Errorf("同じ内容のディレクトリに差分があります: %v", mismatches)
+	}
+
+	// 異なる内容のディレクトリの比較
+	mismatches, err = hasher.CompareDirectories(dir1, dir3, false)
+	if err != nil {
+		t.Errorf("異なる内容ディレクトリの比較が失敗: %v", err)
+	}
+	if len(mismatches) == 0 {
+		t.Error("異なる内容のディレクトリに差分がありません")
+	}
+
+	// 空のディレクトリの比較
+	mismatches, err = hasher.CompareDirectories(emptyDir1, emptyDir2, false)
+	if err != nil {
+		t.Errorf("空ディレクトリの比較が失敗: %v", err)
+	}
+	if len(mismatches) > 0 {
+		t.Error("空のディレクトリに差分があります")
+	}
+
+	// 存在しないディレクトリとの比較
+	_, err = hasher.CompareDirectories(dir1, filepath.Join(tempDir, "nonexistent"), false)
+	if err == nil {
+		t.Error("存在しないディレクトリとの比較でエラーが発生しませんでした")
+	}
+
+	// ファイルとディレクトリの比較（エラーが発生する）
+	_, err = hasher.CompareDirectories(file1, dir1, false)
+	if err == nil {
+		t.Error("ファイルとディレクトリの比較でエラーが発生しませんでした")
+	}
+}
+
+// TestHashFile_EdgeCases はHashFile関数のエッジケースをテスト
+func TestHashFile_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 空のファイル
+	emptyFile := filepath.Join(tempDir, "empty.txt")
+	os.WriteFile(emptyFile, []byte{}, 0644)
+
+	// 大きなファイル
+	largeFile := filepath.Join(tempDir, "large.txt")
+	largeContent := make([]byte, 100*1024) // 100KB
+	for i := range largeContent {
+		largeContent[i] = byte(i % 256)
+	}
+	os.WriteFile(largeFile, largeContent, 0644)
+
+	// シンボリックリンク
+	symlinkFile := filepath.Join(tempDir, "symlink.txt")
+	os.Symlink(emptyFile, symlinkFile)
+
+	hasher := NewHasher(SHA256, 1024)
+
+	// 空のファイルのハッシュ
+	emptyHash, err := hasher.HashFile(emptyFile)
+	if err != nil {
+		t.Errorf("空のファイルのハッシュ計算が失敗: %v", err)
+	}
+	if emptyHash == "" {
+		t.Error("空のファイルのハッシュが空です")
+	}
+
+	// 大きなファイルのハッシュ
+	largeHash, err := hasher.HashFile(largeFile)
+	if err != nil {
+		t.Errorf("大きなファイルのハッシュ計算が失敗: %v", err)
+	}
+	if largeHash == "" {
+		t.Error("大きなファイルのハッシュが空です")
+	}
+
+	// シンボリックリンクのハッシュ
+	symlinkHash, err := hasher.HashFile(symlinkFile)
+	if err != nil {
+		t.Errorf("シンボリックリンクのハッシュ計算が失敗: %v", err)
+	}
+	if symlinkHash == "" {
+		t.Error("シンボリックリンクのハッシュが空です")
+	}
+
+	// 存在しないファイル
+	_, err = hasher.HashFile(filepath.Join(tempDir, "nonexistent.txt"))
+	if err == nil {
+		t.Error("存在しないファイルでエラーが発生しませんでした")
+	}
+
+	// ディレクトリをファイルとして指定
+	_, err = hasher.HashFile(tempDir)
+	if err == nil {
+		t.Error("ディレクトリをファイルとして指定した場合にエラーが発生しませんでした")
+	}
+}

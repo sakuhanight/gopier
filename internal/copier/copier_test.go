@@ -481,6 +481,177 @@ func TestCopyDirectory_NonRecursive(t *testing.T) {
 	}
 }
 
+// TestCopyFile_EdgeCases はcopyFile関数のエッジケースをテスト
+func TestCopyFile_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 空のファイル
+	emptyFile := filepath.Join(sourceDir, "empty.txt")
+	os.WriteFile(emptyFile, []byte{}, 0644)
+
+	// 大きなファイル（バッファサイズより大きい）
+	largeFile := filepath.Join(sourceDir, "large.txt")
+	largeData := make([]byte, 100*1024) // 100KB
+	for i := range largeData {
+		largeData[i] = byte(i % 256)
+	}
+	os.WriteFile(largeFile, largeData, 0644)
+
+	options := DefaultOptions()
+	options.BufferSize = 1024 // 小さなバッファサイズ
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	// 空のファイルのコピー
+	err := copier.copyFile(emptyFile, filepath.Join(destDir, "empty.txt"))
+	if err != nil {
+		t.Errorf("空のファイルのコピーが失敗: %v", err)
+	}
+
+	// 大きなファイルのコピー
+	err = copier.copyFile(largeFile, filepath.Join(destDir, "large.txt"))
+	if err != nil {
+		t.Errorf("大きなファイルのコピーが失敗: %v", err)
+	}
+
+	// 存在しないファイル
+	err = copier.copyFile(filepath.Join(sourceDir, "nonexistent.txt"), filepath.Join(destDir, "nonexistent.txt"))
+	if err == nil {
+		t.Error("存在しないファイルでエラーが発生しませんでした")
+	}
+}
+
+// TestVerifyFile_EdgeCases はverifyFile関数のエッジケースをテスト
+func TestVerifyFile_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	testContent := "test content"
+	os.WriteFile(testFile, []byte(testContent), 0644)
+
+	// 宛先にも同じファイルを作成
+	destFile := filepath.Join(destDir, "test.txt")
+	os.WriteFile(destFile, []byte(testContent), 0644)
+
+	// ファイル情報を取得
+	sourceInfo, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatalf("ファイル情報の取得に失敗: %v", err)
+	}
+
+	options := DefaultOptions()
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	// 正常な検証
+	err = copier.verifyFile(testFile, destFile, "test.txt", sourceInfo)
+	if err != nil {
+		t.Errorf("正常な検証が失敗: %v", err)
+	}
+
+	// 宛先ファイルが存在しない場合
+	err = copier.verifyFile(testFile, filepath.Join(destDir, "nonexistent.txt"), "nonexistent.txt", sourceInfo)
+	if err == nil {
+		t.Error("存在しない宛先ファイルでエラーが発生しませんでした")
+	}
+
+	// ソースファイルが存在しない場合
+	err = copier.verifyFile(filepath.Join(sourceDir, "nonexistent.txt"), destFile, "nonexistent.txt", sourceInfo)
+	if err == nil {
+		t.Error("存在しないソースファイルでエラーが発生しませんでした")
+	}
+}
+
+// TestDoCopyFile_EdgeCases はdoCopyFile関数のエッジケースをテスト
+func TestDoCopyFile_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	testContent := "test content"
+	os.WriteFile(testFile, []byte(testContent), 0644)
+
+	// ファイル情報を取得
+	sourceInfo, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatalf("ファイル情報の取得に失敗: %v", err)
+	}
+
+	options := DefaultOptions()
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	// 正常なコピー
+	err = copier.doCopyFile(testFile, filepath.Join(destDir, "test.txt"), sourceInfo)
+	if err != nil {
+		t.Errorf("正常なコピーが失敗: %v", err)
+	}
+
+	// 宛先ディレクトリを作成してからコピー
+	subDir := filepath.Join(destDir, "subdir")
+	os.MkdirAll(subDir, 0755)
+	err = copier.doCopyFile(testFile, filepath.Join(subDir, "test.txt"), sourceInfo)
+	if err != nil {
+		t.Errorf("サブディレクトリへのコピーが失敗: %v", err)
+	}
+
+	// 存在しないソースファイル
+	err = copier.doCopyFile(filepath.Join(sourceDir, "nonexistent.txt"), filepath.Join(destDir, "nonexistent.txt"), sourceInfo)
+	if err == nil {
+		t.Error("存在しないソースファイルでエラーが発生しませんでした")
+	}
+}
+
+// TestCopyDirectory_EdgeCases はcopyDirectory関数のエッジケースをテスト
+func TestCopyDirectory_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 空のディレクトリ
+	emptyDir := filepath.Join(sourceDir, "empty")
+	os.MkdirAll(emptyDir, 0755)
+
+	// シンボリックリンクを含むディレクトリ
+	symlinkDir := filepath.Join(sourceDir, "symlink")
+	os.MkdirAll(symlinkDir, 0755)
+	symlinkFile := filepath.Join(symlinkDir, "link.txt")
+	os.Symlink(filepath.Join(sourceDir, "nonexistent.txt"), symlinkFile)
+
+	options := DefaultOptions()
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	// 空のディレクトリのコピー
+	err := copier.copyDirectory(emptyDir, filepath.Join(destDir, "empty"))
+	if err != nil {
+		t.Errorf("空のディレクトリのコピーが失敗: %v", err)
+	}
+
+	// シンボリックリンクを含むディレクトリのコピー
+	err = copier.copyDirectory(symlinkDir, filepath.Join(destDir, "symlink"))
+	if err != nil {
+		t.Errorf("シンボリックリンクを含むディレクトリのコピーが失敗: %v", err)
+	}
+
+	// 存在しないディレクトリ
+	err = copier.copyDirectory(filepath.Join(sourceDir, "nonexistent"), filepath.Join(destDir, "nonexistent"))
+	if err == nil {
+		t.Error("存在しないディレクトリでエラーが発生しませんでした")
+	}
+}
+
 // ベンチマーク関数
 func BenchmarkCopyFile_Small(b *testing.B) {
 	tempDir, err := os.MkdirTemp("", "benchmark")
