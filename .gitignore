@@ -96,3 +96,6 @@ test_*.log
 test_data/
 test_sync.db
 test_export.* 
+
+# Config files
+.gopier.yaml
