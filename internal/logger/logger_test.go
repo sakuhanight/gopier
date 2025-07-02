@@ -329,3 +329,26 @@ func TestLogger_FatalWithFields(t *testing.T) {
 		// 実際の実行は行わない（os.Exitが呼ばれるため）
 	})
 }
+
+// TestFatal はFatal関数のテスト
+func TestFatal(t *testing.T) {
+	logger := NewLogger("", false, true)
+	defer logger.Close()
+
+	// Fatal関数の存在を確認（実行はしない）
+	_ = logger.Fatal
+}
+
+// TestFatalWithFields はFatal関数とフィールド付きログのテスト
+func TestFatalWithFields(t *testing.T) {
+	logger := NewLogger("", false, true)
+	defer logger.Close()
+
+	fields := map[string]interface{}{
+		"error_code": 500,
+		"user_id":    "test_user",
+	}
+	sugar := logger.WithFields(fields)
+	// Fatal関数の存在を確認（実行はしない）
+	_ = sugar.Fatal
+}

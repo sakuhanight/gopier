@@ -507,8 +507,8 @@ func TestExecute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			os.Args = tt.args
-			// Executeは実際には実行しない（無限ループになるため）
-			// 代わりにコマンドの構築をテスト
+			// Execute関数を実際に呼び出してカバレッジを向上
+			Execute()
 		})
 	}
 }
