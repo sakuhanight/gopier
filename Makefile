@@ -48,8 +48,13 @@ release:
 	LDFLAGS="-s -w -X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME'"; \
 	echo "Version: $$VERSION"; \
 	echo "BuildTime: $$BUILD_TIME"; \
-	go build -ldflags "$$LDFLAGS" -o $(BINARY_NAME)
-	@echo "リリースビルド完了: $(BINARY_NAME)"
+	if [ "$$GOOS" = "windows" ]; then \
+		go build -ldflags "$$LDFLAGS" -o gopier.exe; \
+		echo "リリースビルド完了: gopier.exe"; \
+	else \
+		go build -ldflags "$$LDFLAGS" -o gopier; \
+		echo "リリースビルド完了: gopier"; \
+	fi
 
 # クロスプラットフォームビルド
 .PHONY: cross-build
