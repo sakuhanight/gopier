@@ -106,22 +106,30 @@ jobs:
           chmod +x ${{ matrix.binary_name }}
         shell: bash
 
-      - name: Create release assets
+      - name: Create release assets (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
           mkdir -p release
           cp ${{ matrix.binary_name }} release/
           cp config.example.yaml release/
           cp README.md release/
           cp LICENSE release/
-          
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            cd release
-            powershell -Command "Compress-Archive -Path * -DestinationPath ../${{ matrix.artifact_name }}.zip -Force"
-            cd ..
-          else
-            rm -f ${{ matrix.artifact_name }}.tar.gz
-            tar -czf ${{ matrix.artifact_name }}.tar.gz -C release .
-          fi
+          cd release
+          Compress-Archive -Path * -DestinationPath ../${{ matrix.artifact_name }}.zip -Force
+          cd ..
+
+      - name: Create release assets (Unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p release
+          cp ${{ matrix.binary_name }} release/
+          cp config.example.yaml release/
+          cp README.md release/
+          cp LICENSE release/
+          rm -f ${{ matrix.artifact_name }}.tar.gz
+          tar -czf ${{ matrix.artifact_name }}.tar.gz -C release .
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
