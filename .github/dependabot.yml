@@ -1,0 +1,79 @@
+version: 2
+updates:
+  # Go modules の依存関係を監視
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "sakuhanight"
+    assignees:
+      - "sakuhanight"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "go"
+    # セキュリティアップデートは即座に作成
+    ignore:
+      # 特定のパッケージを無視する場合はここに追加
+      # - dependency-name: "example.com/package"
+    # マイナーバージョンとパッチバージョンの更新のみ許可
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    # セマンティックバージョニングに従う
+    versioning-strategy: "auto"
+    # プルリクエストのタイトル形式
+    pull-request-branch-name:
+      separator: "-"
+    # 更新の説明
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # 更新の説明
+    pull-request-title-pattern: "deps: bump {{dependency-name}} from {{current-version}} to {{new-version}}"
+    pull-request-body-pattern: |
+      ## 依存関係の更新
+      
+      ### 変更内容
+      - **パッケージ**: {{dependency-name}}
+      - **現在のバージョン**: {{current-version}}
+      - **新しいバージョン**: {{new-version}}
+      
+      ### 変更タイプ
+      {{#if is-major-version-update}}
+      ⚠️ **メジャーバージョンアップデート** - 破壊的変更の可能性があります
+      {{else if is-minor-version-update}}
+      ✨ **マイナーバージョンアップデート** - 新機能が追加されました
+      {{else}}
+      🔧 **パッチバージョンアップデート** - バグ修正とセキュリティアップデート
+      {{/if}}
+      
+      ### 更新理由
+      {{#if is-security-update}}
+      🔒 **セキュリティアップデート** - セキュリティ脆弱性の修正
+      {{else}}
+      📦 **依存関係の更新** - 最新バージョンへの更新
+      {{/if}}
+      
+      ### 変更ログ
+      {{#if changelog}}
+      {{changelog}}
+      {{else}}
+      変更ログは利用できません
+      {{/if}}
+      
+      ### テスト
+      - [ ] ローカルでのテスト実行
+      - [ ] CI/CDパイプラインの確認
+      - [ ] 機能テストの実行
+      
+      ### 注意事項
+      - メジャーバージョンアップデートの場合は、破壊的変更がないか確認してください
+      - セキュリティアップデートの場合は、優先的にマージしてください 
