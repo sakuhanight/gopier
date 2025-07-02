@@ -110,32 +110,40 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
+          # バージョン情報を取得
+          $VERSION = "${{ github.ref_name }}"
+          $VERSIONED_NAME = "${{ matrix.artifact_name }}-$VERSION"
+          
           mkdir -p release
           cp ${{ matrix.binary_name }} release/
           cp config.example.yaml release/
           cp README.md release/
           cp LICENSE release/
           cd release
-          Compress-Archive -Path * -DestinationPath ../${{ matrix.artifact_name }}.zip -Force
+          Compress-Archive -Path * -DestinationPath ../$VERSIONED_NAME.zip -Force
           cd ..
 
       - name: Create release assets (Unix)
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
+          # バージョン情報を取得
+          VERSION="${{ github.ref_name }}"
+          VERSIONED_NAME="${{ matrix.artifact_name }}-$VERSION"
+          
           mkdir -p release
           cp ${{ matrix.binary_name }} release/
           cp config.example.yaml release/
           cp README.md release/
           cp LICENSE release/
-          rm -f ${{ matrix.artifact_name }}.tar.gz
-          tar -czf ${{ matrix.artifact_name }}.tar.gz -C release .
+          rm -f $VERSIONED_NAME.tar.gz
+          tar -czf $VERSIONED_NAME.tar.gz -C release .
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_name }}.*
+          path: ${{ matrix.artifact_name }}-${{ github.ref_name }}.*
 
   release:
     needs: build
@@ -202,10 +210,10 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            gopier-linux-amd64/*.tar.gz
-            gopier-windows-amd64.exe/*.zip
-            gopier-darwin-amd64/*.tar.gz
-            gopier-darwin-arm64/*.tar.gz
+            gopier-linux-amd64/*-${{ github.ref_name }}.tar.gz
+            gopier-windows-amd64.exe/*-${{ github.ref_name }}.zip
+            gopier-darwin-amd64/*-${{ github.ref_name }}.tar.gz
+            gopier-darwin-arm64/*-${{ github.ref_name }}.tar.gz
           body: ${{ steps.changelog.outputs.changelog_content }}
           draft: false
           prerelease: false 
