@@ -108,6 +108,7 @@ jobs:
             powershell -Command "Compress-Archive -Path * -DestinationPath ../${{ matrix.artifact_name }}.zip -Force"
             cd ..
           else
+            rm -f ${{ matrix.artifact_name }}.tar.gz
             tar -czf ${{ matrix.artifact_name }}.tar.gz -C release .
           fi
 
