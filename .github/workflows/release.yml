@@ -97,7 +97,9 @@ jobs:
           $env:GOARCH = "${{ matrix.goarch }}"
           $env:VERSION = "${{ github.ref_name }}"
           make release
-          Move-Item gopier.exe ${{ matrix.binary_name }}
+          if ("${{ matrix.binary_name }}" -ne "gopier.exe") {
+            Move-Item gopier.exe ${{ matrix.binary_name }}
+          }
         shell: pwsh
 
       - name: Build (Unix)
@@ -107,7 +109,9 @@ jobs:
           export GOARCH="${{ matrix.goarch }}"
           export VERSION="${{ github.ref_name }}"
           make release
-          mv gopier ${{ matrix.binary_name }}
+          if [[ "${{ matrix.binary_name }}" != "gopier" ]]; then
+            mv gopier ${{ matrix.binary_name }}
+          fi
           chmod +x ${{ matrix.binary_name }}
         shell: bash
 
