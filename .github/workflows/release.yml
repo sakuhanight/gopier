@@ -185,7 +185,7 @@ jobs:
               cat changelog_section.md
               
               # 改行をエスケープしてGitHub Actionsの出力に設定
-              CHANGELOG_CONTENT=$(cat changelog_section.md | sed ':a;N;$!ba;s/\n/\\n/g')
+              CHANGELOG_CONTENT=$(cat changelog_section.md)
               echo "changelog_content<<EOF" >> $GITHUB_OUTPUT
               echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
               echo "EOF" >> $GITHUB_OUTPUT
