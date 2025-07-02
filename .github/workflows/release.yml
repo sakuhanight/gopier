@@ -152,24 +152,34 @@ jobs:
         run: |
           # タグ名からバージョンを取得
           VERSION="${GITHUB_REF#refs/tags/}"
+          echo "Extracting changelog for version: $VERSION"
           
           # CHANGELOG.mdから該当バージョンのセクションを抽出
           if [[ -f "CHANGELOG.md" ]]; then
-            # バージョンセクションの開始行を検索
+            echo "CHANGELOG.md found"
+            
+            # バージョンセクションの開始行を検索（エスケープを修正）
             START_LINE=$(grep -n "## \\[${VERSION}\\]" CHANGELOG.md | cut -d: -f1)
+            echo "Start line: $START_LINE"
             
             if [[ -n "$START_LINE" ]]; then
               # 次のバージョンセクションの開始行を検索
               NEXT_LINE=$(tail -n +$((START_LINE + 1)) CHANGELOG.md | grep -n "## \\[" | head -1 | cut -d: -f1)
+              echo "Next line: $NEXT_LINE"
               
               if [[ -n "$NEXT_LINE" ]]; then
                 # 次のバージョンセクションがある場合
                 END_LINE=$((START_LINE + NEXT_LINE - 1))
+                echo "End line: $END_LINE"
                 sed -n "${START_LINE},${END_LINE}p" CHANGELOG.md > changelog_section.md
               else
                 # 次のバージョンセクションがない場合（最新バージョン）
+                echo "No next version found, extracting to end"
                 tail -n +${START_LINE} CHANGELOG.md > changelog_section.md
               fi
+              
+              echo "Extracted changelog content:"
+              cat changelog_section.md
               
               # 改行をエスケープしてGitHub Actionsの出力に設定
               CHANGELOG_CONTENT=$(cat changelog_section.md | sed ':a;N;$!ba;s/\n/\\n/g')
@@ -177,9 +187,11 @@ jobs:
               echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
               echo "EOF" >> $GITHUB_OUTPUT
             else
+              echo "Version section not found in CHANGELOG.md"
               echo "changelog_content=## ${VERSION} - $(date +%Y-%m-%d)\\n\\n### Added\\n- リリースノートが自動生成されました" >> $GITHUB_OUTPUT
             fi
           else
+            echo "CHANGELOG.md not found"
             echo "changelog_content=## ${VERSION} - $(date +%Y-%m-%d)\\n\\n### Added\\n- リリースノートが自動生成されました" >> $GITHUB_OUTPUT
           fi
 
