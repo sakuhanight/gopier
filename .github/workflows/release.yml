@@ -50,7 +50,6 @@ jobs:
     needs: test
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
             artifact_name: gopier-linux-amd64
