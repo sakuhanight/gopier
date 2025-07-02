@@ -203,7 +203,7 @@ jobs:
         with:
           files: |
             gopier-linux-amd64/*.tar.gz
-            gopier-windows-amd64/*.zip
+            gopier-windows-amd64.exe/*.zip
             gopier-darwin-amd64/*.tar.gz
             gopier-darwin-arm64/*.tar.gz
           body: ${{ steps.changelog.outputs.changelog_content }}
