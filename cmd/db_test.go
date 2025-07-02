@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/sakuhanight/gopier/internal/database"
 )
 
 func TestDBListCmd(t *testing.T) {
@@ -455,6 +459,228 @@ func TestDatabasePathValidation(t *testing.T) {
 				t.Errorf("DBパス検証: 期待値=%t, 実際=%t", tt.expectValid, isValid)
 			}
 		})
+	}
+}
+
+func TestSortFiles(t *testing.T) {
+	// テスト用のファイルリスト
+	files := []database.FileInfo{
+		{Path: "/test/c.txt", Size: 300, ModTime: time.Now()},
+		{Path: "/test/a.txt", Size: 100, ModTime: time.Now()},
+		{Path: "/test/b.txt", Size: 200, ModTime: time.Now()},
+	}
+
+	// 名前でソート
+	sortFiles(files, "name", false)
+	if len(files) != 3 {
+		t.Errorf("ソート後のファイル数が一致しません: 期待値=3, 実際=%d", len(files))
+	}
+
+	// サイズでソート
+	sortFiles(files, "size", false)
+	if len(files) != 3 {
+		t.Errorf("ソート後のファイル数が一致しません: 期待値=3, 実際=%d", len(files))
+	}
+
+	// 日時でソート
+	sortFiles(files, "time", false)
+	if len(files) != 3 {
+		t.Errorf("ソート後のファイル数が一致しません: 期待値=3, 実際=%d", len(files))
+	}
+
+	// 逆順ソート
+	sortFiles(files, "name", true)
+	if len(files) != 3 {
+		t.Errorf("逆順ソート後のファイル数が一致しません: 期待値=3, 実際=%d", len(files))
+	}
+}
+
+func TestFormatBytes(t *testing.T) {
+	// テストケース
+	tests := []struct {
+		name     string
+		bytes    int64
+		expected string
+	}{
+		{
+			name:     "0バイト",
+			bytes:    0,
+			expected: "0 B",
+		},
+		{
+			name:     "1024バイト",
+			bytes:    1024,
+			expected: "1.0 KB",
+		},
+		{
+			name:     "1048576バイト",
+			bytes:    1048576,
+			expected: "1.0 MB",
+		},
+		{
+			name:     "1073741824バイト",
+			bytes:    1073741824,
+			expected: "1.0 GB",
+		},
+		{
+			name:     "500バイト",
+			bytes:    500,
+			expected: "500 B",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatBytes(tt.bytes)
+			if result != tt.expected {
+				t.Errorf("フォーマット結果が一致しません: 期待値=%s, 実際=%s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestTruncateString(t *testing.T) {
+	// テストケース
+	tests := []struct {
+		name     string
+		input    string
+		maxLen   int
+		expected string
+	}{
+		{
+			name:     "短い文字列",
+			input:    "short",
+			maxLen:   10,
+			expected: "short",
+		},
+		{
+			name:     "長い文字列",
+			input:    "very long string that should be truncated",
+			maxLen:   20,
+			expected: "very long string ...",
+		},
+		{
+			name:     "空文字列",
+			input:    "",
+			maxLen:   10,
+			expected: "",
+		},
+		{
+			name:     "最大長と同じ長さ",
+			input:    "exact length",
+			maxLen:   12,
+			expected: "exact length",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := truncateString(tt.input, tt.maxLen)
+			if result != tt.expected {
+				t.Errorf("切り詰め結果が一致しません: 期待値=%s, 実際=%s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestCalculateTotalSize(t *testing.T) {
+	// テスト用のファイルリスト
+	files := []database.FileInfo{
+		{Path: "/test/file1.txt", Size: 100},
+		{Path: "/test/file2.txt", Size: 200},
+		{Path: "/test/file3.txt", Size: 300},
+	}
+
+	totalSize := calculateTotalSize(files)
+	expectedSize := int64(600)
+
+	if totalSize != expectedSize {
+		t.Errorf("合計サイズが一致しません: 期待値=%d, 実際=%d", expectedSize, totalSize)
+	}
+
+	// 空のリスト
+	emptyFiles := []database.FileInfo{}
+	emptyTotal := calculateTotalSize(emptyFiles)
+	if emptyTotal != 0 {
+		t.Errorf("空リストの合計サイズが0ではありません: 実際=%d", emptyTotal)
+	}
+}
+
+func TestExportToCSV(t *testing.T) {
+	// テスト用の一時ディレクトリを作成
+	tempDir := t.TempDir()
+	outputPath := filepath.Join(tempDir, "test.csv")
+
+	// テスト用のファイルリスト
+	files := []database.FileInfo{
+		{
+			Path:         "/test/file1.txt",
+			Size:         1024,
+			ModTime:      time.Now(),
+			SourceHash:   "hash1",
+			Status:       database.StatusSuccess,
+			FailCount:    0,
+			LastSyncTime: time.Now(),
+		},
+		{
+			Path:         "/test/file2.txt",
+			Size:         2048,
+			ModTime:      time.Now(),
+			SourceHash:   "hash2",
+			Status:       database.StatusFailed,
+			FailCount:    1,
+			LastSyncTime: time.Now(),
+		},
+	}
+
+	// CSVエクスポート
+	err := exportToCSV(files, outputPath)
+	if err != nil {
+		t.Errorf("CSVエクスポートが失敗: %v", err)
+	}
+
+	// ファイルが作成されているか確認
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Error("CSVファイルが作成されていません")
+	}
+}
+
+func TestExportToJSON(t *testing.T) {
+	// テスト用の一時ディレクトリを作成
+	tempDir := t.TempDir()
+	outputPath := filepath.Join(tempDir, "test.json")
+
+	// テスト用のファイルリスト
+	files := []database.FileInfo{
+		{
+			Path:         "/test/file1.txt",
+			Size:         1024,
+			ModTime:      time.Now(),
+			SourceHash:   "hash1",
+			Status:       database.StatusSuccess,
+			FailCount:    0,
+			LastSyncTime: time.Now(),
+		},
+		{
+			Path:         "/test/file2.txt",
+			Size:         2048,
+			ModTime:      time.Now(),
+			SourceHash:   "hash2",
+			Status:       database.StatusFailed,
+			FailCount:    1,
+			LastSyncTime: time.Now(),
+		},
+	}
+
+	// JSONエクスポート
+	err := exportToJSON(files, outputPath)
+	if err != nil {
+		t.Errorf("JSONエクスポートが失敗: %v", err)
+	}
+
+	// ファイルが作成されているか確認
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Error("JSONファイルが作成されていません")
 	}
 }
 
