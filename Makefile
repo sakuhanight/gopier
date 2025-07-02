@@ -1,12 +1,10 @@
+SHELL=/bin/bash
 # Gopier Makefile for cross-platform
 # 使用方法: make <target>
 
 # 変数定義
 BINARY_NAME=gopier
 BUILD_DIR=build
-VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-BUILD_TIME=$(shell date '+%Y-%m-%d %H:%M:%S')
-LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
 
 # OS判定
 ifeq ($(OS),Windows_NT)
@@ -32,34 +30,45 @@ all: clean build
 .PHONY: build
 build:
 	@echo "ビルド中..."
-	go build $(LDFLAGS) -o $(BINARY_NAME)
+	@VERSION=$$(git describe --tags --always --dirty 2>/dev/null || echo "dev"); \
+	BUILD_TIME=$$(date '+%Y-%m-%d %H:%M:%S'); \
+	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME'"; \
+	echo "Version: $$VERSION"; \
+	echo "BuildTime: $$BUILD_TIME"; \
+	set -x; \
+	go build -ldflags "$$LDFLAGS" -o $(BINARY_NAME)
 	@echo "ビルド完了: $(BINARY_NAME)"
 
 # リリースビルド（最適化）
 .PHONY: release
 release:
 	@echo "リリースビルド中..."
-	go build $(LDFLAGS) -ldflags "-s -w" -o $(BINARY_NAME)
+	@VERSION=$$(git describe --tags --always --dirty 2>/dev/null || echo "dev"); \
+	BUILD_TIME=$$(date '+%Y-%m-%d %H:%M:%S'); \
+	LDFLAGS="-s -w -X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME'"; \
+	echo "Version: $$VERSION"; \
+	echo "BuildTime: $$BUILD_TIME"; \
+	go build -ldflags "$$LDFLAGS" -o $(BINARY_NAME)
 	@echo "リリースビルド完了: $(BINARY_NAME)"
 
 # クロスプラットフォームビルド
 .PHONY: cross-build
 cross-build:
 	@echo "クロスプラットフォームビルド中..."
-	$(MKDIR) $(BUILD_DIR)
-	
-	@echo "Windows AMD64..."
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-windows-amd64.exe
-	
-	@echo "Linux AMD64..."
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-linux-amd64
-	
-	@echo "macOS AMD64..."
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-darwin-amd64
-	
-	@echo "macOS ARM64..."
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-darwin-arm64
-	
+	@VERSION=$$(git describe --tags --always --dirty 2>/dev/null || echo "dev"); \
+	BUILD_TIME=$$(date '+%Y-%m-%d %H:%M:%S'); \
+	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME'"; \
+	echo "Version: $$VERSION"; \
+	echo "BuildTime: $$BUILD_TIME"; \
+	$(MKDIR) $(BUILD_DIR); \
+	echo "Windows AMD64..."; \
+	GOOS=windows GOARCH=amd64 go build -ldflags "$$LDFLAGS" -o $(BUILD_DIR)/gopier-windows-amd64.exe; \
+	echo "Linux AMD64..."; \
+	GOOS=linux GOARCH=amd64 go build -ldflags "$$LDFLAGS" -o $(BUILD_DIR)/gopier-linux-amd64; \
+	echo "macOS AMD64..."; \
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$$LDFLAGS" -o $(BUILD_DIR)/gopier-darwin-amd64; \
+	echo "macOS ARM64..."; \
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$$LDFLAGS" -o $(BUILD_DIR)/gopier-darwin-arm64
 	@echo "クロスプラットフォームビルド完了"
 
 # テスト実行

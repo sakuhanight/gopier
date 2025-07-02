@@ -43,6 +43,10 @@ import (
 var (
 	cfgFile string
 
+	// バージョン情報
+	Version   = "dev"
+	BuildTime = "unknown"
+
 	// 基本オプション
 	sourceDir      string
 	destDir        string
@@ -125,6 +129,12 @@ var rootCmd = &cobra.Command{
 
 詳細なログ出力にはUberのZapロガーを使用しています。`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// バージョン表示フラグの確認
+		if version, _ := cmd.PersistentFlags().GetBool("version"); version {
+			fmt.Printf("gopier version %s (build: %s)\n", Version, BuildTime)
+			return
+		}
+
 		// 設定ファイル作成フラグの確認
 		if createConfig, _ := cmd.PersistentFlags().GetBool("create-config"); createConfig {
 			fmt.Println("設定ファイル作成を開始します...")
@@ -297,6 +307,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "設定ファイル (デフォルト: $HOME/.gopier.yaml)")
 	rootCmd.PersistentFlags().Bool("create-config", false, "デフォルトの設定ファイルを作成")
 	rootCmd.PersistentFlags().Bool("show-config", false, "現在の設定値を表示")
+	rootCmd.PersistentFlags().Bool("version", false, "バージョン情報を表示")
 
 	// 基本オプション
 	rootCmd.Flags().StringVarP(&sourceDir, "source", "s", "", "コピー元ディレクトリ (必須)")
