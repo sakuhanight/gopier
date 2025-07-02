@@ -154,8 +154,48 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_name }}-${{ github.ref_name }}.*
 
-  release:
+  sign:
     needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Setup GPG
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
+          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --passphrase-fd 0 --pinentry-mode loopback --edit-key "${{ secrets.GPG_KEY_ID }}" trust
+
+      - name: Sign artifacts
+        run: |
+          # 署名ファイルを作成
+          for file in *-${{ github.ref_name }}.tar.gz *-${{ github.ref_name }}.zip; do
+            if [ -f "$file" ]; then
+              echo "Signing $file..."
+              gpg --batch --yes --detach-sign --armor "$file"
+              echo "Created signature: $file.asc"
+            fi
+          done
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-release-assets
+          path: |
+            *-${{ github.ref_name }}.tar.gz
+            *-${{ github.ref_name }}.tar.gz.asc
+            *-${{ github.ref_name }}.zip
+            *-${{ github.ref_name }}.zip.asc
+
+  release:
+    needs: [build, sign]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -223,6 +263,8 @@ jobs:
             gopier-windows-amd64.exe/*-${{ github.ref_name }}.zip
             gopier-darwin-amd64/*-${{ github.ref_name }}.tar.gz
             gopier-darwin-arm64/*-${{ github.ref_name }}.tar.gz
+            signed-release-assets/*-${{ github.ref_name }}.tar.gz.asc
+            signed-release-assets/*-${{ github.ref_name }}.zip.asc
           body: ${{ steps.changelog.outputs.changelog_content }}
           draft: false
           prerelease: false 
