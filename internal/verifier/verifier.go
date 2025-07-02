@@ -193,7 +193,14 @@ func (v *Verifier) Verify() error {
 
 	// すべてのゴルーチンの完了を待つ
 	v.wg.Wait()
-	close(v.progressChan)
+
+	// チャンネルがまだ開いている場合のみ閉じる
+	select {
+	case <-v.progressChan:
+		// チャンネルは既に閉じられている
+	default:
+		close(v.progressChan)
+	}
 
 	// 同期セッションの終了
 	if v.db != nil {
@@ -327,7 +334,12 @@ func (v *Verifier) verifyFile(sourcePath, destPath string) (*VerificationResult,
 
 	// 進捗報告
 	if v.progressFunc != nil {
-		v.progressChan <- relPath
+		select {
+		case v.progressChan <- relPath:
+			// 正常に送信
+		default:
+			// チャンネルが閉じられているか、バッファが一杯
+		}
 	}
 
 	// 結果の初期化

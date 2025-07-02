@@ -385,7 +385,12 @@ func (fc *FileCopier) copyFile(sourcePath, destPath string) error {
 
 	// 進捗報告
 	if fc.progressFunc != nil {
-		fc.progressChan <- relPath
+		select {
+		case fc.progressChan <- relPath:
+			// 正常に送信
+		default:
+			// チャンネルが閉じられているか、バッファが一杯
+		}
 	}
 
 	// データベース内の既存ファイル情報を確認
