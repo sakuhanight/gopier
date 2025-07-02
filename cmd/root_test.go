@@ -464,22 +464,10 @@ func BenchmarkRootCmdExecution(b *testing.B) {
 	os.MkdirAll(sourceDir, 0755)
 	os.MkdirAll(destDir, 0755)
 
-	// 元の値を保存
-	originalSourceDir := sourceDir
-	originalDestDir := destDir
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		// フラグを設定
-		sourceDir = originalSourceDir
-		destDir = originalDestDir
-
 		// コマンドの実行をシミュレート（実際の処理は行わない）
 	}
-
-	// フラグを元に戻す
-	sourceDir = originalSourceDir
-	destDir = originalDestDir
 }
 
 func TestExecute(t *testing.T) {
