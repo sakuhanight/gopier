@@ -147,6 +147,42 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
+      - name: Extract changelog section
+        id: changelog
+        run: |
+          # タグ名からバージョンを取得
+          VERSION="${GITHUB_REF#refs/tags/}"
+          
+          # CHANGELOG.mdから該当バージョンのセクションを抽出
+          if [[ -f "CHANGELOG.md" ]]; then
+            # バージョンセクションの開始行を検索
+            START_LINE=$(grep -n "## \\[${VERSION}\\]" CHANGELOG.md | cut -d: -f1)
+            
+            if [[ -n "$START_LINE" ]]; then
+              # 次のバージョンセクションの開始行を検索
+              NEXT_LINE=$(tail -n +$((START_LINE + 1)) CHANGELOG.md | grep -n "## \\[" | head -1 | cut -d: -f1)
+              
+              if [[ -n "$NEXT_LINE" ]]; then
+                # 次のバージョンセクションがある場合
+                END_LINE=$((START_LINE + NEXT_LINE - 1))
+                sed -n "${START_LINE},${END_LINE}p" CHANGELOG.md > changelog_section.md
+              else
+                # 次のバージョンセクションがない場合（最新バージョン）
+                tail -n +${START_LINE} CHANGELOG.md > changelog_section.md
+              fi
+              
+              # 改行をエスケープしてGitHub Actionsの出力に設定
+              CHANGELOG_CONTENT=$(cat changelog_section.md | sed ':a;N;$!ba;s/\n/\\n/g')
+              echo "changelog_content<<EOF" >> $GITHUB_OUTPUT
+              echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            else
+              echo "changelog_content=## ${VERSION} - $(date +%Y-%m-%d)\\n\\n### Added\\n- リリースノートが自動生成されました" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "changelog_content=## ${VERSION} - $(date +%Y-%m-%d)\\n\\n### Added\\n- リリースノートが自動生成されました" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -155,6 +191,6 @@ jobs:
             gopier-windows-amd64/*.zip
             gopier-darwin-amd64/*.tar.gz
             gopier-darwin-arm64/*.tar.gz
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.changelog_content }}
           draft: false
           prerelease: false 

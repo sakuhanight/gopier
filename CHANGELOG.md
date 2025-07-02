@@ -1,35 +1,32 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+本プロジェクトの全ての主な変更点を記載します。
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Added
-- 初回リリース準備
-- GitHub Actionsによる自動ビルド・リリース
-- マルチプラットフォーム対応（Linux/Windows/macOS Intel/macOS ARM64）
-- BoltDBによる同期状態管理
-- ハッシュ検証機能（MD5/SHA1/SHA256）
-- 並列コピー・リトライ・ミラーモード
-- 詳細なログ出力とエラーハンドリング
-- フィルタリング機能（include/exclude patterns）
-- 進捗表示と統計情報
-- 設定ファイルサポート（YAML）
-- ドライラン機能
-- 検証専用モード
-
+## [v0.9.2] - 2025-07-02
 ### Changed
-- SQLiteからBoltDBにデータベースエンジンを変更（CGO依存を解消）
+- Windowsリリースアセット作成をPowerShell構文に修正し、OSごとに分割
+- cmd, main: テストカバレッジ向上のためテスト追加・修正
+- Windowsビルド時のGOARCH指定をPowerShell流に修正
 
-### Fixed
-- ビルド版での応答なし問題（CGO依存のSQLiteドライバーが原因）
-- 設定ファイル読み込み優先順位の修正
+## [v0.9.1] - 2025-07-02
+### Added
+- データベース閲覧機能（list, stats, export, clean, resetサブコマンド）
+- .gitignoreにテストファイルと設定ファイルを追加
+- copier/verifierパッケージにベンチマーク関数を追加
+### Changed
+- Windowsビルド時のbash if文エラーをOSごとに分割して修正
+- .gitignoreの更新
 
-## [1.0.0] - 2025-01-02
+## [v0.9.0] - 2025-07-02
+### Changed
+- キャッシュを一時的に無効化し、File existsエラーを完全回避
+- キャッシュrestore-keysを具体化し競合・壊れキャッシュ回避
+- tarアーカイブ作成前に既存ファイルを削除し、File existsエラーを回避
+- Goモジュールキャッシュ設定を追加（actions/cache@v4）
+- Windows環境でのビルドエラーを修正
+- Dependabotの導入
 
+## [v0.1.0] - 2025-07-02
 ### Added
 - 初回リリース
 - 基本的なファイル同期機能
