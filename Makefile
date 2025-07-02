@@ -1,12 +1,28 @@
-# Gopier Makefile for Windows
+# Gopier Makefile for cross-platform
 # 使用方法: make <target>
 
 # 変数定義
-BINARY_NAME=gopier.exe
+BINARY_NAME=gopier
 BUILD_DIR=build
-VERSION=$(shell git describe --tags --always --dirty 2>nul || echo "dev")
-BUILD_TIME=$(shell powershell -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'")
+VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_TIME=$(shell date '+%Y-%m-%d %H:%M:%S')
 LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
+
+# OS判定
+ifeq ($(OS),Windows_NT)
+    BINARY_NAME=gopier.exe
+    RM=del /Q
+    RMDIR=rmdir /S /Q
+    MKDIR=mkdir
+    CP=copy
+    SHELL=cmd
+else
+    RM=rm -f
+    RMDIR=rm -rf
+    MKDIR=mkdir -p
+    CP=cp
+    SHELL=bash
+endif
 
 # デフォルトターゲット
 .PHONY: all
@@ -30,19 +46,19 @@ release:
 .PHONY: cross-build
 cross-build:
 	@echo "クロスプラットフォームビルド中..."
-	@if not exist $(BUILD_DIR) mkdir $(BUILD_DIR)
+	$(MKDIR) $(BUILD_DIR)
 	
 	@echo "Windows AMD64..."
-	set GOOS=windows&& set GOARCH=amd64&& go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-windows-amd64.exe
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-windows-amd64.exe
 	
 	@echo "Linux AMD64..."
-	set GOOS=linux&& set GOARCH=amd64&& go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-linux-amd64
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-linux-amd64
 	
 	@echo "macOS AMD64..."
-	set GOOS=darwin&& set GOARCH=amd64&& go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-darwin-amd64
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-darwin-amd64
 	
 	@echo "macOS ARM64..."
-	set GOOS=darwin&& set GOARCH=arm64&& go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-darwin-arm64
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/gopier-darwin-arm64
 	
 	@echo "クロスプラットフォームビルド完了"
 
@@ -71,24 +87,24 @@ tidy:
 .PHONY: clean
 clean:
 	@echo "クリーンアップ中..."
-	@if exist $(BINARY_NAME) del $(BINARY_NAME)
-	@if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)
-	@if exist coverage.out del coverage.out
-	@if exist coverage.html del coverage.html
+	$(RM) $(BINARY_NAME)
+	$(RMDIR) $(BUILD_DIR)
+	$(RM) coverage.out
+	$(RM) coverage.html
 	@echo "クリーンアップ完了"
 
 # インストール
 .PHONY: install
 install: build
 	@echo "インストール中..."
-	copy $(BINARY_NAME) "%GOPATH%\bin\"
+	$(CP) $(BINARY_NAME) $(GOPATH)/bin/
 	@echo "インストール完了"
 
 # アンインストール
 .PHONY: uninstall
 uninstall:
 	@echo "アンインストール中..."
-	@if exist "%GOPATH%\bin\$(BINARY_NAME)" del "%GOPATH%\bin\$(BINARY_NAME)"
+	$(RM) $(GOPATH)/bin/$(BINARY_NAME)
 	@echo "アンインストール完了"
 
 # ヘルプ
