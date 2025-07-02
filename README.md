@@ -142,6 +142,49 @@ verify_hash: true
 - 失敗ファイルの再同期や検証履歴もDBで一元管理
 - DBファイルは`--db`でパス指定可能
 
+### データベース閲覧・管理
+
+データベースの内容を閲覧・管理するための`db`サブコマンドが利用可能です：
+
+```sh
+# ファイル一覧の表示
+./gopier db list --db sync_state.db
+
+# 統計情報の表示
+./gopier db stats --db sync_state.db
+
+# CSV形式でエクスポート
+./gopier db export --db sync_state.db --output export.csv --format csv
+
+# JSON形式でエクスポート
+./gopier db export --db sync_state.db --output export.json --format json
+
+# 特定ステータスのファイルのみ表示
+./gopier db list --db sync_state.db --status success
+
+# サイズ順でソート（逆順）
+./gopier db list --db sync_state.db --sort-by size --reverse
+
+# 表示件数を制限
+./gopier db list --db sync_state.db --limit 10
+
+# データベースのリセット（初期同期モード用）
+./gopier db reset --db sync_state.db
+```
+
+#### 利用可能なサブコマンド
+- `list`: データベース内のファイル一覧を表示
+- `stats`: 同期統計情報を表示
+- `export`: データベースの内容をファイルにエクスポート（CSV/JSON）
+- `clean`: 古いレコードを削除
+- `reset`: データベースをリセット（初期同期モード用）
+
+#### フィルタリング・ソート機能
+- `--status`: 特定のステータスのファイルのみ表示
+- `--sort-by`: ソート項目（path, size, mod_time, status, last_sync_time）
+- `--reverse`: 逆順でソート
+- `--limit`: 表示件数の制限
+
 ---
 
 ## エラーハンドリング・ログ
