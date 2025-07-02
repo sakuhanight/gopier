@@ -7,6 +7,11 @@
 - Makefileのビルドコマンドでバージョン情報埋め込み時のエラーを修正
 - ビルド時のLDFLAGS変数展開問題を解決し、--versionオプションで正しくバージョン表示
 - GitHub Actionsのrelease.ymlでタグからバージョンを自動取得しビルド時間を埋め込む機能を改善
+### Changed
+- CI/CDワークフローをMakefileを使用するように修正
+- GitHub Actionsのci.ymlとrelease.ymlでmakeコマンドを使用
+- Makefileで環境変数VERSIONをサポートし、CI/CDでのバージョン制御を改善
+- ビルドプロセスの一貫性と保守性を向上
 
 ## [v0.9.3] - 2025-07-02
 ### Fixed

@@ -427,24 +427,59 @@ func validateConfig(config *Config) error {
 
 // loadConfig は設定ファイルを読み込んでフラグにバインドする
 func loadConfig(cmd *cobra.Command) {
-	// 設定ファイルが既に読み込まれている場合は、その内容を処理
+	// 設定ファイルの値を構造体に読み込み
+	var config Config
 	if viper.ConfigFileUsed() != "" {
-		// 設定ファイルの値を構造体に読み込み
-		var config Config
+		// 設定ファイルが存在する場合
 		if err := viper.Unmarshal(&config); err != nil {
 			fmt.Fprintf(os.Stderr, "設定ファイルの解析エラー: %v\n", err)
 			return
 		}
+	} else {
+		// 設定ファイルが存在しない場合はデフォルト値を設定
+		config = Config{
+			// パフォーマンス設定
+			Workers:    runtime.NumCPU(),
+			BufferSize: 8,
+			RetryCount: 3,
+			RetryWait:  5,
 
-		// 設定値の妥当性チェック
-		if err := validateConfig(&config); err != nil {
-			fmt.Fprintf(os.Stderr, "設定ファイルの検証エラー: %v\n", err)
-			return
+			// 動作設定
+			Recursive:         true,
+			Mirror:            false,
+			DryRun:            false,
+			Verbose:           false,
+			SkipNewer:         false,
+			NoProgress:        false,
+			PreserveModTime:   true,
+			OverwriteExisting: true,
+
+			// 同期設定
+			SyncMode:      "normal",
+			SyncDBPath:    "sync_state.db",
+			IncludeFailed: true,
+			MaxFailCount:  5,
+
+			// 検証設定
+			VerifyOnly:    false,
+			VerifyChanged: false,
+			VerifyAll:     false,
+			FinalReport:   "",
+
+			// ハッシュ設定
+			HashAlgorithm: "sha256",
+			VerifyHash:    true,
 		}
-
-		// 設定ファイルの値をフラグにバインド（フラグが設定されていない場合のみ）
-		bindConfigToFlags(&config, cmd)
 	}
+
+	// 設定値の妥当性チェック
+	if err := validateConfig(&config); err != nil {
+		fmt.Fprintf(os.Stderr, "設定ファイルの検証エラー: %v\n", err)
+		return
+	}
+
+	// 設定ファイルの値をフラグにバインド（フラグが設定されていない場合のみ）
+	bindConfigToFlags(&config, cmd)
 }
 
 // bindConfigToFlags は設定ファイルの値をフラグにバインドする
