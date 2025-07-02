@@ -170,7 +170,6 @@ jobs:
       - name: Setup GPG
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --passphrase-fd 0 --pinentry-mode loopback --edit-key "${{ secrets.GPG_KEY_ID }}" trust
           gpg --list-keys
 
       - name: Sign artifacts
