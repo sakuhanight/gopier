@@ -463,35 +463,106 @@ func TestDatabasePathValidation(t *testing.T) {
 }
 
 func TestSortFiles(t *testing.T) {
-	// テスト用のファイルリスト
+	// テスト用のファイルリスト（異なる時刻とステータスを含む）
+	now := time.Now()
+	earlier := now.Add(-1 * time.Hour)
+	later := now.Add(1 * time.Hour)
+
 	files := []database.FileInfo{
-		{Path: "/test/c.txt", Size: 300, ModTime: time.Now()},
-		{Path: "/test/a.txt", Size: 100, ModTime: time.Now()},
-		{Path: "/test/b.txt", Size: 200, ModTime: time.Now()},
+		{
+			Path:         "/test/c.txt",
+			Size:         300,
+			ModTime:      now,
+			Status:       database.StatusSuccess,
+			LastSyncTime: later,
+		},
+		{
+			Path:         "/test/a.txt",
+			Size:         100,
+			ModTime:      earlier,
+			Status:       database.StatusFailed,
+			LastSyncTime: now,
+		},
+		{
+			Path:         "/test/b.txt",
+			Size:         200,
+			ModTime:      later,
+			Status:       database.StatusPending,
+			LastSyncTime: earlier,
+		},
 	}
 
-	// 名前でソート
-	sortFiles(files, "name", false)
-	if len(files) != 3 {
-		t.Errorf("ソート後のファイル数が一致しません: 期待値=3, 実際=%d", len(files))
+	// パスでソート（昇順）
+	sortFiles(files, "path", false)
+	if files[0].Path != "/test/a.txt" || files[1].Path != "/test/b.txt" || files[2].Path != "/test/c.txt" {
+		t.Errorf("パスでのソートが正しくありません: %v", files)
 	}
 
-	// サイズでソート
+	// パスでソート（降順）
+	sortFiles(files, "path", true)
+	if files[0].Path != "/test/c.txt" || files[1].Path != "/test/b.txt" || files[2].Path != "/test/a.txt" {
+		t.Errorf("パスでの逆順ソートが正しくありません: %v", files)
+	}
+
+	// サイズでソート（昇順）
 	sortFiles(files, "size", false)
-	if len(files) != 3 {
-		t.Errorf("ソート後のファイル数が一致しません: 期待値=3, 実際=%d", len(files))
+	if files[0].Size != 100 || files[1].Size != 200 || files[2].Size != 300 {
+		t.Errorf("サイズでのソートが正しくありません: %v", files)
 	}
 
-	// 日時でソート
-	sortFiles(files, "time", false)
-	if len(files) != 3 {
-		t.Errorf("ソート後のファイル数が一致しません: 期待値=3, 実際=%d", len(files))
+	// サイズでソート（降順）
+	sortFiles(files, "size", true)
+	if files[0].Size != 300 || files[1].Size != 200 || files[2].Size != 100 {
+		t.Errorf("サイズでの逆順ソートが正しくありません: %v", files)
 	}
 
-	// 逆順ソート
-	sortFiles(files, "name", true)
-	if len(files) != 3 {
-		t.Errorf("逆順ソート後のファイル数が一致しません: 期待値=3, 実際=%d", len(files))
+	// 更新日時でソート（昇順）
+	sortFiles(files, "mod_time", false)
+	if files[0].ModTime != earlier || files[1].ModTime != now || files[2].ModTime != later {
+		t.Errorf("更新日時でのソートが正しくありません: %v", files)
+	}
+
+	// 更新日時でソート（降順）
+	sortFiles(files, "mod_time", true)
+	if files[0].ModTime != later || files[1].ModTime != now || files[2].ModTime != earlier {
+		t.Errorf("更新日時での逆順ソートが正しくありません: %v", files)
+	}
+
+	// ステータスでソート（昇順）
+	sortFiles(files, "status", false)
+	if files[0].Status != database.StatusFailed || files[1].Status != database.StatusPending || files[2].Status != database.StatusSuccess {
+		t.Errorf("ステータスでのソートが正しくありません: %v", files)
+	}
+
+	// ステータスでソート（降順）
+	sortFiles(files, "status", true)
+	if files[0].Status != database.StatusSuccess || files[1].Status != database.StatusPending || files[2].Status != database.StatusFailed {
+		t.Errorf("ステータスでの逆順ソートが正しくありません: %v", files)
+	}
+
+	// 最終同期時刻でソート（昇順）
+	sortFiles(files, "last_sync_time", false)
+	if files[0].LastSyncTime != earlier || files[1].LastSyncTime != now || files[2].LastSyncTime != later {
+		t.Errorf("最終同期時刻でのソートが正しくありません: %v", files)
+	}
+
+	// 最終同期時刻でソート（降順）
+	sortFiles(files, "last_sync_time", true)
+	if files[0].LastSyncTime != later || files[1].LastSyncTime != now || files[2].LastSyncTime != earlier {
+		t.Errorf("最終同期時刻での逆順ソートが正しくありません: %v", files)
+	}
+
+	// 無効なソート条件（デフォルトでパスソート）
+	sortFiles(files, "invalid_sort", false)
+	if files[0].Path != "/test/a.txt" || files[1].Path != "/test/b.txt" || files[2].Path != "/test/c.txt" {
+		t.Errorf("無効なソート条件でのデフォルト動作が正しくありません: %v", files)
+	}
+
+	// 空のファイルリスト
+	emptyFiles := []database.FileInfo{}
+	sortFiles(emptyFiles, "path", false)
+	if len(emptyFiles) != 0 {
+		t.Errorf("空のファイルリストのソートでエラーが発生しました")
 	}
 }
 
@@ -508,9 +579,29 @@ func TestFormatBytes(t *testing.T) {
 			expected: "0 B",
 		},
 		{
+			name:     "1バイト",
+			bytes:    1,
+			expected: "1 B",
+		},
+		{
+			name:     "500バイト",
+			bytes:    500,
+			expected: "500 B",
+		},
+		{
+			name:     "1023バイト",
+			bytes:    1023,
+			expected: "1023 B",
+		},
+		{
 			name:     "1024バイト",
 			bytes:    1024,
 			expected: "1.0 KB",
+		},
+		{
+			name:     "1536バイト",
+			bytes:    1536,
+			expected: "1.5 KB",
 		},
 		{
 			name:     "1048576バイト",
@@ -518,14 +609,34 @@ func TestFormatBytes(t *testing.T) {
 			expected: "1.0 MB",
 		},
 		{
+			name:     "1572864バイト",
+			bytes:    1572864,
+			expected: "1.5 MB",
+		},
+		{
 			name:     "1073741824バイト",
 			bytes:    1073741824,
 			expected: "1.0 GB",
 		},
 		{
-			name:     "500バイト",
-			bytes:    500,
-			expected: "500 B",
+			name:     "1610612736バイト",
+			bytes:    1610612736,
+			expected: "1.5 GB",
+		},
+		{
+			name:     "1099511627776バイト",
+			bytes:    1099511627776,
+			expected: "1.0 TB",
+		},
+		{
+			name:     "1125899906842624バイト",
+			bytes:    1125899906842624,
+			expected: "1.0 PB",
+		},
+		{
+			name:     "1152921504606846976バイト",
+			bytes:    1152921504606846976,
+			expected: "1.0 EB",
 		},
 	}
 
@@ -548,10 +659,22 @@ func TestTruncateString(t *testing.T) {
 		expected string
 	}{
 		{
+			name:     "空文字列",
+			input:    "",
+			maxLen:   10,
+			expected: "",
+		},
+		{
 			name:     "短い文字列",
 			input:    "short",
 			maxLen:   10,
 			expected: "short",
+		},
+		{
+			name:     "最大長と同じ長さ",
+			input:    "exact length",
+			maxLen:   12,
+			expected: "exact length",
 		},
 		{
 			name:     "長い文字列",
@@ -560,16 +683,46 @@ func TestTruncateString(t *testing.T) {
 			expected: "very long string ...",
 		},
 		{
-			name:     "空文字列",
-			input:    "",
-			maxLen:   10,
-			expected: "",
+			name:     "最大長が3未満",
+			input:    "test",
+			maxLen:   2,
+			expected: "...",
 		},
 		{
-			name:     "最大長と同じ長さ",
-			input:    "exact length",
-			maxLen:   12,
-			expected: "exact length",
+			name:     "最大長が3",
+			input:    "test",
+			maxLen:   3,
+			expected: "...",
+		},
+		{
+			name:     "最大長が4",
+			input:    "test",
+			maxLen:   4,
+			expected: "test",
+		},
+		{
+			name:     "日本語文字列",
+			input:    "これは長い日本語の文字列です",
+			maxLen:   10,
+			expected: "これは長い日本...",
+		},
+		{
+			name:     "特殊文字を含む文字列",
+			input:    "test\n\r\tstring",
+			maxLen:   15,
+			expected: "test\n\r\tstring",
+		},
+		{
+			name:     "最大長が0",
+			input:    "test",
+			maxLen:   0,
+			expected: "...",
+		},
+		{
+			name:     "最大長が負の値",
+			input:    "test",
+			maxLen:   -1,
+			expected: "...",
 		},
 	}
 
@@ -643,6 +796,19 @@ func TestExportToCSV(t *testing.T) {
 	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
 		t.Error("CSVファイルが作成されていません")
 	}
+
+	// エラーケース: 無効なパス
+	invalidPath := "/invalid/path/test.csv"
+	err = exportToCSV(files, invalidPath)
+	if err == nil {
+		t.Error("無効なパスでエラーが発生しませんでした")
+	}
+
+	// 空のファイルリスト
+	err = exportToCSV([]database.FileInfo{}, outputPath+"_empty.csv")
+	if err != nil {
+		t.Errorf("空のファイルリストのCSVエクスポートが失敗: %v", err)
+	}
 }
 
 func TestExportToJSON(t *testing.T) {
@@ -681,6 +847,19 @@ func TestExportToJSON(t *testing.T) {
 	// ファイルが作成されているか確認
 	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
 		t.Error("JSONファイルが作成されていません")
+	}
+
+	// エラーケース: 無効なパス
+	invalidPath := "/invalid/path/test.json"
+	err = exportToJSON(files, invalidPath)
+	if err == nil {
+		t.Error("無効なパスでエラーが発生しませんでした")
+	}
+
+	// 空のファイルリスト
+	err = exportToJSON([]database.FileInfo{}, outputPath+"_empty.json")
+	if err != nil {
+		t.Errorf("空のファイルリストのJSONエクスポートが失敗: %v", err)
 	}
 }
 
