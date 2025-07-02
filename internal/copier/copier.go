@@ -211,7 +211,14 @@ func (fc *FileCopier) CopyFiles() error {
 
 	// すべてのゴルーチンの完了を待つ
 	fc.wg.Wait()
-	close(fc.progressChan)
+
+	// チャンネルがまだ開いている場合のみ閉じる
+	select {
+	case <-fc.progressChan:
+		// チャンネルは既に閉じられている
+	default:
+		close(fc.progressChan)
+	}
 
 	// 同期セッションの終了
 	if fc.db != nil {
