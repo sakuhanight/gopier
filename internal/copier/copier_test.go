@@ -480,3 +480,332 @@ func TestCopyDirectory_NonRecursive(t *testing.T) {
 		t.Error("非再帰モードでサブディレクトリがコピーされています")
 	}
 }
+
+// ベンチマーク関数
+func BenchmarkCopyFile_Small(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 小さなファイルを作成
+	sourceFile := filepath.Join(sourceDir, "small.txt")
+	content := []byte("hello world")
+	if err := os.WriteFile(sourceFile, content, 0644); err != nil {
+		b.Fatalf("ファイルの作成に失敗: %v", err)
+	}
+
+	options := DefaultOptions()
+	options.BufferSize = 1024 * 1024 // 1MB
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		destFile := filepath.Join(destDir, fmt.Sprintf("small_%d.txt", i))
+		err := copier.copyFile(sourceFile, destFile)
+		if err != nil {
+			b.Fatalf("copyFileが失敗: %v", err)
+		}
+		// クリーンアップ
+		os.Remove(destFile)
+	}
+}
+
+func BenchmarkCopyFile_Large(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 大きなファイルを作成（10MB）
+	sourceFile := filepath.Join(sourceDir, "large.txt")
+	content := make([]byte, 10*1024*1024)
+	for i := range content {
+		content[i] = byte(i % 256)
+	}
+	if err := os.WriteFile(sourceFile, content, 0644); err != nil {
+		b.Fatalf("ファイルの作成に失敗: %v", err)
+	}
+
+	options := DefaultOptions()
+	options.BufferSize = 8 * 1024 * 1024 // 8MB
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		destFile := filepath.Join(destDir, fmt.Sprintf("large_%d.txt", i))
+		err := copier.copyFile(sourceFile, destFile)
+		if err != nil {
+			b.Fatalf("copyFileが失敗: %v", err)
+		}
+		// クリーンアップ
+		os.Remove(destFile)
+	}
+}
+
+func BenchmarkCopyDirectory_Small(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+
+	// 小さなファイルを複数作成
+	for i := 0; i < 100; i++ {
+		file := filepath.Join(sourceDir, fmt.Sprintf("file_%d.txt", i))
+		content := []byte(fmt.Sprintf("content %d", i))
+		if err := os.WriteFile(file, content, 0644); err != nil {
+			b.Fatalf("ファイルの作成に失敗: %v", err)
+		}
+	}
+
+	options := DefaultOptions()
+	options.MaxConcurrent = 4
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		destDirPath := filepath.Join(destDir, fmt.Sprintf("dest_%d", i))
+		err := copier.copyDirectory(sourceDir, destDirPath)
+		if err != nil {
+			b.Fatalf("copyDirectoryが失敗: %v", err)
+		}
+		// クリーンアップ
+		os.RemoveAll(destDirPath)
+	}
+}
+
+func BenchmarkCopyDirectory_Large(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+
+	// 大きなファイルを複数作成
+	for i := 0; i < 10; i++ {
+		file := filepath.Join(sourceDir, fmt.Sprintf("large_%d.txt", i))
+		content := make([]byte, 1024*1024) // 1MB
+		for j := range content {
+			content[j] = byte((i + j) % 256)
+		}
+		if err := os.WriteFile(file, content, 0644); err != nil {
+			b.Fatalf("ファイルの作成に失敗: %v", err)
+		}
+	}
+
+	options := DefaultOptions()
+	options.MaxConcurrent = 4
+	options.BufferSize = 4 * 1024 * 1024 // 4MB
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		destDirPath := filepath.Join(destDir, fmt.Sprintf("dest_%d", i))
+		err := copier.copyDirectory(sourceDir, destDirPath)
+		if err != nil {
+			b.Fatalf("copyDirectoryが失敗: %v", err)
+		}
+		// クリーンアップ
+		os.RemoveAll(destDirPath)
+	}
+}
+
+func BenchmarkVerifyFile_Small(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// ファイルを作成
+	sourceFile := filepath.Join(sourceDir, "test.txt")
+	destFile := filepath.Join(destDir, "test.txt")
+	content := []byte("hello world")
+	os.WriteFile(sourceFile, content, 0644)
+	os.WriteFile(destFile, content, 0644)
+
+	options := DefaultOptions()
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	// ファイル情報を取得
+	sourceInfo, err := os.Stat(sourceFile)
+	if err != nil {
+		b.Fatalf("ファイル情報の取得に失敗: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := copier.verifyFile(sourceFile, destFile, "test.txt", sourceInfo)
+		if err != nil {
+			b.Fatalf("verifyFileが失敗: %v", err)
+		}
+	}
+}
+
+func BenchmarkVerifyFile_Large(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 大きなファイルを作成
+	sourceFile := filepath.Join(sourceDir, "large.txt")
+	destFile := filepath.Join(destDir, "large.txt")
+	content := make([]byte, 5*1024*1024) // 5MB
+	for i := range content {
+		content[i] = byte(i % 256)
+	}
+	os.WriteFile(sourceFile, content, 0644)
+	os.WriteFile(destFile, content, 0644)
+
+	options := DefaultOptions()
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	// ファイル情報を取得
+	sourceInfo, err := os.Stat(sourceFile)
+	if err != nil {
+		b.Fatalf("ファイル情報の取得に失敗: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := copier.verifyFile(sourceFile, destFile, "large.txt", sourceInfo)
+		if err != nil {
+			b.Fatalf("verifyFileが失敗: %v", err)
+		}
+	}
+}
+
+func BenchmarkCopyFiles_Parallel(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+
+	// 複数のファイルを作成
+	for i := 0; i < 50; i++ {
+		file := filepath.Join(sourceDir, fmt.Sprintf("file_%d.txt", i))
+		content := make([]byte, 1024) // 1KB
+		for j := range content {
+			content[j] = byte((i + j) % 256)
+		}
+		if err := os.WriteFile(file, content, 0644); err != nil {
+			b.Fatalf("ファイルの作成に失敗: %v", err)
+		}
+	}
+
+	options := DefaultOptions()
+	options.MaxConcurrent = 8
+	options.ProgressInterval = time.Hour // 進捗表示を無効化
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		destDirPath := filepath.Join(destDir, fmt.Sprintf("dest_%d", i))
+		os.MkdirAll(destDirPath, 0755)
+
+		// 一時的に宛先ディレクトリを変更
+		originalDest := copier.destDir
+		copier.destDir = destDirPath
+
+		err := copier.CopyFiles()
+		if err != nil {
+			b.Fatalf("CopyFilesが失敗: %v", err)
+		}
+		copier.wg.Wait()
+
+		// 元に戻す
+		copier.destDir = originalDest
+
+		// クリーンアップ
+		os.RemoveAll(destDirPath)
+	}
+}
+
+func BenchmarkCopyFiles_WithFilter(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+
+	// 異なる拡張子のファイルを作成
+	for i := 0; i < 100; i++ {
+		extensions := []string{".txt", ".log", ".tmp", ".bak"}
+		ext := extensions[i%len(extensions)]
+		file := filepath.Join(sourceDir, fmt.Sprintf("file_%d%s", i, ext))
+		content := []byte(fmt.Sprintf("content %d", i))
+		if err := os.WriteFile(file, content, 0644); err != nil {
+			b.Fatalf("ファイルの作成に失敗: %v", err)
+		}
+	}
+
+	options := DefaultOptions()
+	options.MaxConcurrent = 4
+	options.ProgressInterval = time.Hour // 進捗表示を無効化
+	fileFilter := filter.NewFilter("*.txt,*.log", "*.tmp,*.bak")
+	copier := NewFileCopier(sourceDir, destDir, options, fileFilter, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		destDirPath := filepath.Join(destDir, fmt.Sprintf("dest_%d", i))
+		os.MkdirAll(destDirPath, 0755)
+
+		// 一時的に宛先ディレクトリを変更
+		originalDest := copier.destDir
+		copier.destDir = destDirPath
+
+		err := copier.CopyFiles()
+		if err != nil {
+			b.Fatalf("CopyFilesが失敗: %v", err)
+		}
+		copier.wg.Wait()
+
+		// 元に戻す
+		copier.destDir = originalDest
+
+		// クリーンアップ
+		os.RemoveAll(destDirPath)
+	}
+}

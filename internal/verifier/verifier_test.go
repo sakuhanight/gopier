@@ -711,3 +711,222 @@ func TestVerifyWithProgressCallback(t *testing.T) {
 		t.Error("進捗コールバックが呼ばれていません")
 	}
 }
+
+// ベンチマーク関数
+func BenchmarkVerifyFile_Small(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 小さなファイルを作成
+	sourceFile := filepath.Join(sourceDir, "test.txt")
+	destFile := filepath.Join(destDir, "test.txt")
+	content := []byte("hello world")
+	os.WriteFile(sourceFile, content, 0644)
+	os.WriteFile(destFile, content, 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		result, err := verifier.verifyFile(sourceFile, destFile)
+		if err != nil {
+			b.Fatalf("verifyFileが失敗: %v", err)
+		}
+		if !result.HashMatch {
+			b.Fatalf("ファイルが一致しません: %v", result)
+		}
+	}
+}
+
+func BenchmarkVerifyFile_Large(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 大きなファイルを作成（5MB）
+	sourceFile := filepath.Join(sourceDir, "large.txt")
+	destFile := filepath.Join(destDir, "large.txt")
+	content := make([]byte, 5*1024*1024)
+	for i := range content {
+		content[i] = byte(i % 256)
+	}
+	os.WriteFile(sourceFile, content, 0644)
+	os.WriteFile(destFile, content, 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		result, err := verifier.verifyFile(sourceFile, destFile)
+		if err != nil {
+			b.Fatalf("verifyFileが失敗: %v", err)
+		}
+		if !result.HashMatch {
+			b.Fatalf("ファイルが一致しません: %v", result)
+		}
+	}
+}
+
+func BenchmarkVerifyDirectory_Small(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 小さなファイルを複数作成
+	for i := 0; i < 50; i++ {
+		fileName := fmt.Sprintf("file_%d.txt", i)
+		content := []byte(fmt.Sprintf("content %d", i))
+		os.WriteFile(filepath.Join(sourceDir, fileName), content, 0644)
+		os.WriteFile(filepath.Join(destDir, fileName), content, 0644)
+	}
+
+	options := DefaultOptions()
+	options.MaxConcurrent = 4
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := verifier.verifyDirectory(sourceDir, destDir)
+		if err != nil {
+			b.Fatalf("verifyDirectoryが失敗: %v", err)
+		}
+	}
+}
+
+func BenchmarkVerifyDirectory_Large(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 大きなファイルを複数作成
+	for i := 0; i < 10; i++ {
+		fileName := fmt.Sprintf("large_%d.txt", i)
+		content := make([]byte, 1024*1024) // 1MB
+		for j := range content {
+			content[j] = byte((i + j) % 256)
+		}
+		os.WriteFile(filepath.Join(sourceDir, fileName), content, 0644)
+		os.WriteFile(filepath.Join(destDir, fileName), content, 0644)
+	}
+
+	options := DefaultOptions()
+	options.MaxConcurrent = 4
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := verifier.verifyDirectory(sourceDir, destDir)
+		if err != nil {
+			b.Fatalf("verifyDirectoryが失敗: %v", err)
+		}
+	}
+}
+
+func BenchmarkVerifyAll_Parallel(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 複数のファイルを作成
+	for i := 0; i < 100; i++ {
+		fileName := fmt.Sprintf("file_%d.txt", i)
+		content := make([]byte, 1024) // 1KB
+		for j := range content {
+			content[j] = byte((i + j) % 256)
+		}
+		os.WriteFile(filepath.Join(sourceDir, fileName), content, 0644)
+		os.WriteFile(filepath.Join(destDir, fileName), content, 0644)
+	}
+
+	options := DefaultOptions()
+	options.MaxConcurrent = 8
+	options.ProgressInterval = time.Hour // 進捗表示を無効化
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := verifier.Verify()
+		if err != nil {
+			b.Fatalf("Verifyが失敗: %v", err)
+		}
+	}
+}
+
+func BenchmarkVerifyAll_WithFilter(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatalf("一時ディレクトリの作成に失敗: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 異なる拡張子のファイルを作成
+	for i := 0; i < 200; i++ {
+		extensions := []string{".txt", ".log", ".tmp", ".bak", ".dat"}
+		ext := extensions[i%len(extensions)]
+		fileName := fmt.Sprintf("file_%d%s", i, ext)
+		content := []byte(fmt.Sprintf("content %d", i))
+
+		sourceFile := filepath.Join(sourceDir, fileName)
+		destFile := filepath.Join(destDir, fileName)
+
+		os.WriteFile(sourceFile, content, 0644)
+		os.WriteFile(destFile, content, 0644)
+	}
+
+	options := DefaultOptions()
+	options.MaxConcurrent = 4
+	options.ProgressInterval = time.Hour // 進捗表示を無効化
+	fileFilter := filter.NewFilter("*.txt,*.log", "*.tmp,*.bak")
+	verifier := NewVerifier(sourceDir, destDir, options, fileFilter, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := verifier.Verify()
+		if err != nil {
+			b.Fatalf("Verifyが失敗: %v", err)
+		}
+	}
+}

@@ -221,6 +221,18 @@ verify_hash: true
 go test ./...
 ```
 
+### ベンチマークの実行
+Goの標準ベンチマーク機能でパフォーマンステストが可能です。
+
+例：copier/verifierパッケージのベンチマーク
+```sh
+go test -bench=. ./internal/copier
+go test -bench=. ./internal/verifier
+```
+
+- `-bench=.` で全てのベンチマークが実行されます。
+- 必要に応じて `-bench=関数名` で個別に実行できます。
+
 ### コントリビュート
 - Issue/Pull Request歓迎
 - テスト・ドキュメントの追加も大歓迎
