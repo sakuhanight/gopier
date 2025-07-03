@@ -97,5 +97,7 @@ test_data/
 test_sync.db
 test_export.* 
 
+coverage.html
+
 # Config files
 .gopier.yaml
