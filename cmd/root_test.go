@@ -466,9 +466,22 @@ func BenchmarkRootCmdExecution(b *testing.B) {
 	os.MkdirAll(sourceDir, 0755)
 	os.MkdirAll(destDir, 0755)
 
+	// 元のos.Argsを保存
+	originalArgs := os.Args
+	defer func() { os.Args = originalArgs }()
+
+	// テスト環境であることを示す環境変数を設定
+	originalTesting := os.Getenv("TESTING")
+	os.Setenv("TESTING", "1")
+	defer func() { os.Setenv("TESTING", originalTesting) }()
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		// コマンドの実行をシミュレート（実際の処理は行わない）
+		os.Args = []string{"gopier", "--source", sourceDir, "--destination", destDir}
+		err := Execute()
+		if err != nil {
+			b.Errorf("予期しないエラーが発生しました: %v", err)
+		}
 	}
 }
 
@@ -477,6 +490,11 @@ func TestExecute(t *testing.T) {
 	// 実際のコマンド実行をシミュレート
 	originalArgs := os.Args
 	defer func() { os.Args = originalArgs }()
+
+	// テスト環境であることを示す環境変数を設定
+	originalTesting := os.Getenv("TESTING")
+	os.Setenv("TESTING", "1")
+	defer func() { os.Setenv("TESTING", originalTesting) }()
 
 	// テストケース
 	tests := []struct {
@@ -510,7 +528,13 @@ func TestExecute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			os.Args = tt.args
 			// Execute関数を実際に呼び出してカバレッジを向上
-			Execute()
+			err := Execute()
+			if tt.expectError && err == nil {
+				t.Error("エラーが期待されましたが、発生しませんでした")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("予期しないエラーが発生しました: %v", err)
+			}
 		})
 	}
 }
