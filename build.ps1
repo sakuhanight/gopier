@@ -200,6 +200,7 @@ function Test-Project {
         $env:TESTING = "1"
         Write-Host "TESTING環境変数: $env:TESTING"
         Write-ColorOutput "通常テスト実行中..." "Yellow"
+        $env:TESTING = "1"
         go test -v ./...
         if ($LASTEXITCODE -eq 0) {
             Write-ColorOutput "通常テスト成功" "Green"
