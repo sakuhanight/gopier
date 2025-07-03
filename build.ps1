@@ -197,6 +197,7 @@ function Test-Project {
     }
     
     try {
+        Write-Host "TESTING環境変数: $env:TESTING"
         Write-ColorOutput "通常テスト実行中..." "Yellow"
         go test -v ./...
         if ($LASTEXITCODE -eq 0) {
