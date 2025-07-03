@@ -90,8 +90,12 @@ test-coverage:
 	@echo "テストカバレッジ実行中..."
 	go test -v -coverprofile=coverage.out ./cmd/... ./internal/...
 	@echo "カバレッジレポート生成中..."
-	go tool cover -html=coverage.out -o coverage.html
-	@echo "カバレッジレポート: coverage.html"
+	@if [ -f coverage.out ]; then \
+		go tool cover -html=coverage.out -o coverage.html; \
+		echo "カバレッジレポート: coverage.html"; \
+	else \
+		echo "カバレッジファイルが見つかりません"; \
+	fi
 
 # 依存関係の整理
 .PHONY: tidy
