@@ -81,12 +81,15 @@ cross-build:
 test:
 	@echo "テスト実行中..."
 	go test -v ./...
+	@echo "統合テスト実行中..."
+	go test -v ./tests/...
 
 # テストカバレッジ
 .PHONY: test-coverage
 test-coverage:
 	@echo "テストカバレッジ実行中..."
-	go test -v -coverprofile=coverage.out ./...
+	go test -v -coverprofile=coverage.out ./cmd/... ./internal/...
+	@echo "カバレッジレポート生成中..."
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "カバレッジレポート: coverage.html"
 

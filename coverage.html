@@ -3,7 +3,7 @@
 <html>
 	<head>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-		<title>verifier: Go Coverage Report</title>
+		<title>cmd: Go Coverage Report</title>
 		<style>
 			body {
 				background: black;
@@ -55,7 +55,23 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/sakuhanight/gopier/internal/verifier/verifier.go (79.9%)</option>
+				<option value="file0">github.com/sakuhanight/gopier/cmd/db.go (0.0%)</option>
+				
+				<option value="file1">github.com/sakuhanight/gopier/cmd/root.go (84.7%)</option>
+				
+				<option value="file2">github.com/sakuhanight/gopier/internal/copier/copier.go (57.4%)</option>
+				
+				<option value="file3">github.com/sakuhanight/gopier/internal/database/database.go (79.4%)</option>
+				
+				<option value="file4">github.com/sakuhanight/gopier/internal/filter/filter.go (100.0%)</option>
+				
+				<option value="file5">github.com/sakuhanight/gopier/internal/hasher/hasher.go (89.3%)</option>
+				
+				<option value="file6">github.com/sakuhanight/gopier/internal/logger/logger.go (89.8%)</option>
+				
+				<option value="file7">github.com/sakuhanight/gopier/internal/stats/stats.go (94.3%)</option>
+				
+				<option value="file8">github.com/sakuhanight/gopier/internal/verifier/verifier.go (79.6%)</option>
 				
 				</select>
 			</div>
@@ -69,7 +85,3492 @@
 		</div>
 		<div id="content">
 		
-		<pre class="file" id="file0" style="display: none">package verifier
+		<pre class="file" id="file0" style="display: none">package cmd
+
+import (
+        "fmt"
+        "strings"
+        "time"
+
+        "github.com/spf13/cobra"
+
+        "github.com/sakuhanight/gopier/internal/database"
+)
+
+var (
+        dbPath      string
+        dbOutput    string
+        dbFormat    string
+        dbStatus    string
+        dbLimit     int
+        dbSortBy    string
+        dbReverse   bool
+        dbNoConfirm bool
+)
+
+// dbCmd represents the db command
+var dbCmd = &amp;cobra.Command{
+        Use:   "db",
+        Short: "同期データベースの閲覧・管理",
+        Long: `同期データベースの内容を閲覧・管理するコマンドです。
+
+利用可能なサブコマンド:
+  list     - データベース内のファイル一覧を表示
+  stats    - 同期統計情報を表示
+  export   - データベースの内容をファイルにエクスポート
+  clean    - 古いレコードを削除
+  reset    - データベースをリセット（初期同期モード用）`,
+}
+
+// listCmd represents the list command
+var listCmd = &amp;cobra.Command{
+        Use:   "list",
+        Short: "データベース内のファイル一覧を表示",
+        Long: `データベースに記録されているファイルの一覧を表示します。
+
+フィルタリングオプション:
+  --status: 特定のステータスのファイルのみ表示
+  --limit: 表示件数を制限
+  --sort-by: ソート項目（path, size, mod_time, status, last_sync_time）
+  --reverse: 逆順でソート`,
+        RunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                if dbPath == "" </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+                }</span>
+
+                // データベースを開く
+                <span class="cov0" title="0">syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースのオープンに失敗: %w", err)
+                }</span>
+                <span class="cov0" title="0">defer syncDB.Close()
+
+                // ファイル一覧を取得
+                files, err := syncDB.GetAllFiles()
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+                }</span>
+
+                // フィルタリング
+                <span class="cov0" title="0">if dbStatus != "" </span><span class="cov0" title="0">{
+                        filtered := make([]database.FileInfo, 0)
+                        for _, file := range files </span><span class="cov0" title="0">{
+                                if string(file.Status) == dbStatus </span><span class="cov0" title="0">{
+                                        filtered = append(filtered, file)
+                                }</span>
+                        }
+                        <span class="cov0" title="0">files = filtered</span>
+                }
+
+                // ソート
+                <span class="cov0" title="0">sortFiles(files, dbSortBy, dbReverse)
+
+                // 件数制限
+                if dbLimit &gt; 0 &amp;&amp; len(files) &gt; dbLimit </span><span class="cov0" title="0">{
+                        files = files[:dbLimit]
+                }</span>
+
+                // 表示
+                <span class="cov0" title="0">fmt.Printf("データベース: %s\n", dbPath)
+                fmt.Printf("総ファイル数: %d\n\n", len(files))
+
+                if len(files) == 0 </span><span class="cov0" title="0">{
+                        fmt.Println("ファイルが見つかりません。")
+                        return nil
+                }</span>
+
+                // ヘッダー
+                <span class="cov0" title="0">fmt.Printf("%-50s %-10s %-20s %-15s %-20s\n", "パス", "サイズ", "更新日時", "ステータス", "最終同期")
+                fmt.Println(strings.Repeat("-", 120))
+
+                // ファイル一覧
+                for _, file := range files </span><span class="cov0" title="0">{
+                        sizeStr := formatBytes(file.Size)
+                        modTimeStr := file.ModTime.Format("2006-01-02 15:04:05")
+                        syncTimeStr := file.LastSyncTime.Format("2006-01-02 15:04:05")
+                        statusStr := string(file.Status)
+
+                        fmt.Printf("%-50s %-10s %-20s %-15s %-20s\n",
+                                truncateString(file.Path, 50),
+                                sizeStr,
+                                modTimeStr,
+                                statusStr,
+                                syncTimeStr)
+                }</span>
+                <span class="cov0" title="0">return nil</span>
+        },
+}
+
+// statsCmd represents the stats command
+var statsCmd = &amp;cobra.Command{
+        Use:   "stats",
+        Short: "同期統計情報を表示",
+        Long:  `データベースに記録されている同期統計情報を表示します。`,
+        RunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                if dbPath == "" </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+                }</span>
+
+                // データベースを開く
+                <span class="cov0" title="0">syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースのオープンに失敗: %w", err)
+                }</span>
+                <span class="cov0" title="0">defer syncDB.Close()
+
+                // 統計情報を取得
+                stats, err := syncDB.GetSyncStats()
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("統計情報の取得に失敗: %w", err)
+                }</span>
+
+                // ファイル一覧を取得して詳細統計を計算
+                <span class="cov0" title="0">files, err := syncDB.GetAllFiles()
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+                }</span>
+
+                <span class="cov0" title="0">fmt.Printf("データベース: %s\n", dbPath)
+                fmt.Println(strings.Repeat("=", 50))
+
+                // 基本統計
+                fmt.Printf("総ファイル数: %d\n", len(files))
+                fmt.Printf("総サイズ: %s\n", formatBytes(calculateTotalSize(files)))
+
+                // ステータス別統計
+                statusCount := make(map[database.FileStatus]int)
+                for _, file := range files </span><span class="cov0" title="0">{
+                        statusCount[file.Status]++
+                }</span>
+
+                <span class="cov0" title="0">fmt.Println("\nステータス別統計:")
+                for status, count := range statusCount </span><span class="cov0" title="0">{
+                        fmt.Printf("  %s: %d件\n", status, count)
+                }</span>
+
+                // 同期セッション統計
+                <span class="cov0" title="0">fmt.Println("\n同期セッション統計:")
+                for key, value := range stats </span><span class="cov0" title="0">{
+                        fmt.Printf("  %s: %d\n", key, value)
+                }</span>
+
+                // 失敗回数統計
+                <span class="cov0" title="0">failCounts := make(map[int]int)
+                for _, file := range files </span><span class="cov0" title="0">{
+                        failCounts[file.FailCount]++
+                }</span>
+
+                <span class="cov0" title="0">fmt.Println("\n失敗回数別統計:")
+                for failCount, count := range failCounts </span><span class="cov0" title="0">{
+                        if failCount &gt; 0 </span><span class="cov0" title="0">{
+                                fmt.Printf("  失敗%d回: %d件\n", failCount, count)
+                        }</span>
+                }
+                <span class="cov0" title="0">return nil</span>
+        },
+}
+
+// exportCmd represents the export command
+var exportCmd = &amp;cobra.Command{
+        Use:   "export",
+        Short: "データベースの内容をファイルにエクスポート",
+        Long: `データベースの内容をCSVまたはJSON形式でファイルにエクスポートします。
+
+サポートされている形式:
+  csv  - CSVファイル（デフォルト）
+  json - JSONファイル`,
+        RunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                if dbPath == "" </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+                }</span>
+
+                <span class="cov0" title="0">if dbOutput == "" </span><span class="cov0" title="0">{
+                        return fmt.Errorf("出力ファイルが指定されていません。--outputフラグを使用してください。")
+                }</span>
+
+                // データベースを開く
+                <span class="cov0" title="0">syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースのオープンに失敗: %w", err)
+                }</span>
+                <span class="cov0" title="0">defer syncDB.Close()
+
+                // ファイル一覧を取得
+                files, err := syncDB.GetAllFiles()
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+                }</span>
+
+                // フィルタリング
+                <span class="cov0" title="0">if dbStatus != "" </span><span class="cov0" title="0">{
+                        filtered := make([]database.FileInfo, 0)
+                        for _, file := range files </span><span class="cov0" title="0">{
+                                if string(file.Status) == dbStatus </span><span class="cov0" title="0">{
+                                        filtered = append(filtered, file)
+                                }</span>
+                        }
+                        <span class="cov0" title="0">files = filtered</span>
+                }
+
+                // ソート
+                <span class="cov0" title="0">sortFiles(files, dbSortBy, dbReverse)
+
+                // エクスポート
+                switch strings.ToLower(dbFormat) </span>{
+                case "csv":<span class="cov0" title="0">
+                        err = exportToCSV(files, dbOutput)</span>
+                case "json":<span class="cov0" title="0">
+                        err = exportToJSON(files, dbOutput)</span>
+                default:<span class="cov0" title="0">
+                        return fmt.Errorf("サポートされていない形式です: %s", dbFormat)</span>
+                }
+                <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("エクスポートに失敗: %w", err)
+                }</span>
+                <span class="cov0" title="0">fmt.Printf("エクスポートが完了しました: %s\n", dbOutput)
+                return nil</span>
+        },
+}
+
+// cleanCmd represents the clean command
+var cleanCmd = &amp;cobra.Command{
+        Use:   "clean",
+        Short: "古いレコードを削除",
+        Long:  `指定された日数より古いレコードを削除します。`,
+        RunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                if dbPath == "" </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+                }</span>
+
+                // データベースを開く
+                <span class="cov0" title="0">syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースのオープンに失敗: %w", err)
+                }</span>
+                <span class="cov0" title="0">defer syncDB.Close()
+
+                // ファイル一覧を取得
+                files, err := syncDB.GetAllFiles()
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+                }</span>
+
+                // 古いレコードを削除
+                <span class="cov0" title="0">cutoff := time.Now().AddDate(0, 0, -30) // デフォルト30日前
+                deletedCount := 0
+
+                for _, file := range files </span><span class="cov0" title="0">{
+                        if file.LastSyncTime.Before(cutoff) </span><span class="cov0" title="0">{
+                                // レコードを削除（実装は後で追加）
+                                deletedCount++
+                        }</span>
+                }
+
+                <span class="cov0" title="0">fmt.Printf("%d件の古いレコードを削除しました。\n", deletedCount)
+                return nil</span>
+        },
+}
+
+// resetCmd represents the reset command
+var resetCmd = &amp;cobra.Command{
+        Use:   "reset",
+        Short: "データベースをリセット",
+        Long: `データベースをリセットします（初期同期モード用）。
+注意: この操作は元に戻せません。`,
+        RunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                if dbPath == "" </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+                }</span>
+
+                // 確認（--no-confirmフラグが指定されていない場合のみ）
+                <span class="cov0" title="0">if !dbNoConfirm </span><span class="cov0" title="0">{
+                        fmt.Printf("データベース %s をリセットしますか？ (y/N): ", dbPath)
+                        var response string
+                        fmt.Scanln(&amp;response)
+                        if strings.ToLower(response) != "y" &amp;&amp; strings.ToLower(response) != "yes" </span><span class="cov0" title="0">{
+                                fmt.Println("リセットをキャンセルしました。")
+                                return nil
+                        }</span>
+                }
+
+                // データベースを開く（初期同期モード）
+                <span class="cov0" title="0">syncDB, err := database.NewSyncDB(dbPath, database.InitialSync)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースのオープンに失敗: %w", err)
+                }</span>
+                <span class="cov0" title="0">defer syncDB.Close()
+
+                // リセット
+                err = syncDB.ResetDatabase()
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("データベースのリセットに失敗: %w", err)
+                }</span>
+
+                <span class="cov0" title="0">fmt.Println("データベースをリセットしました。")
+                return nil</span>
+        },
+}
+
+// init()は削除 - コマンド定義は残す
+
+// ヘルパー関数はcmd/root.goに移動済み
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">/*
+Copyright © 2025 sakuhanight
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+package cmd
+
+import (
+        "encoding/csv"
+        "encoding/json"
+        "fmt"
+        "os"
+        "path/filepath"
+        "runtime"
+        "sort"
+        "strings"
+        "time"
+
+        "github.com/sakuhanight/gopier/internal/database"
+        "github.com/spf13/cobra"
+        "github.com/spf13/viper"
+        "gopkg.in/yaml.v3"
+)
+
+var (
+        cfgFile string
+
+        // バージョン情報
+        Version   = "dev"
+        BuildTime = "unknown"
+
+        // 基本オプション
+        sourceDir      string
+        destDir        string
+        logFile        string
+        numWorkers     int
+        retryCount     int
+        retryWait      int
+        includePattern string
+        excludePattern string
+        mirror         bool
+        dryRun         bool
+        verbose        bool
+        skipNewer      bool
+        noProgress     bool
+        bufferSize     int
+        recursive      bool
+
+        // 同期モード関連
+        syncMode      string
+        syncDBPath    string
+        verifyOnly    bool
+        verifyAll     bool
+        verifyChanged bool
+        includeFailed bool
+        maxFailCount  int
+        finalReport   string
+)
+
+// Config は設定ファイルの構造を定義する
+type Config struct {
+        // 基本設定
+        Source      string `mapstructure:"source"`
+        Destination string `mapstructure:"destination"`
+        LogFile     string `mapstructure:"log_file"`
+
+        // パフォーマンス設定
+        Workers    int `mapstructure:"workers"`
+        BufferSize int `mapstructure:"buffer_size"`
+        RetryCount int `mapstructure:"retry_count"`
+        RetryWait  int `mapstructure:"retry_wait"`
+
+        // フィルタ設定
+        IncludePattern string `mapstructure:"include_pattern"`
+        ExcludePattern string `mapstructure:"exclude_pattern"`
+
+        // 動作設定
+        Recursive         bool `mapstructure:"recursive"`
+        Mirror            bool `mapstructure:"mirror"`
+        DryRun            bool `mapstructure:"dry_run"`
+        Verbose           bool `mapstructure:"verbose"`
+        SkipNewer         bool `mapstructure:"skip_newer"`
+        NoProgress        bool `mapstructure:"no_progress"`
+        PreserveModTime   bool `mapstructure:"preserve_mod_time"`
+        OverwriteExisting bool `mapstructure:"overwrite_existing"`
+
+        // 同期設定
+        SyncMode      string `mapstructure:"sync_mode"`
+        SyncDBPath    string `mapstructure:"sync_db_path"`
+        IncludeFailed bool   `mapstructure:"include_failed"`
+        MaxFailCount  int    `mapstructure:"max_fail_count"`
+
+        // 検証設定
+        VerifyOnly    bool   `mapstructure:"verify_only"`
+        VerifyChanged bool   `mapstructure:"verify_changed"`
+        VerifyAll     bool   `mapstructure:"verify_all"`
+        FinalReport   string `mapstructure:"final_report"`
+
+        // ハッシュ設定
+        HashAlgorithm string `mapstructure:"hash_algorithm"`
+        VerifyHash    bool   `mapstructure:"verify_hash"`
+}
+
+// グローバルなrootCmdは従来通り残す
+var rootCmd *cobra.Command
+
+// newRootCmd は新しいコマンドツリーを生成して返す
+func newRootCmd() *cobra.Command <span class="cov8" title="1">{
+        rootCmd := &amp;cobra.Command{
+                Use:   "gopier",
+                Short: "高性能なファイル同期ツール",
+                Long: `Gopierは、Goで実装された高性能なファイル同期ツールです。
+初期同期と追加同期の各フェーズに対応し、失敗したファイルの再同期機能と
+ハッシュ検証機能を備えています。
+
+詳細なログ出力にはUberのZapロガーを使用しています。`,
+                RunE: rootCmdRunE, // 既存のRunEロジックを関数化して利用
+        }
+
+        // グローバル設定フラグ
+        rootCmd.PersistentFlags().StringVar(&amp;cfgFile, "config", "", "設定ファイル (デフォルト: $HOME/.gopier.yaml)")
+        rootCmd.PersistentFlags().Bool("create-config", false, "デフォルトの設定ファイルを作成")
+        rootCmd.PersistentFlags().Bool("show-config", false, "現在の設定値を表示")
+        rootCmd.PersistentFlags().Bool("version", false, "バージョン情報を表示")
+
+        // 基本オプション
+        rootCmd.Flags().StringVarP(&amp;sourceDir, "source", "s", "", "コピー元ディレクトリ (必須)")
+        rootCmd.Flags().StringVarP(&amp;destDir, "destination", "d", "", "コピー先ディレクトリ (必須)")
+        rootCmd.Flags().StringVarP(&amp;logFile, "log", "l", "", "ログファイルのパス")
+        rootCmd.Flags().IntVarP(&amp;numWorkers, "workers", "w", runtime.NumCPU(), "並列ワーカー数")
+        rootCmd.Flags().IntVarP(&amp;retryCount, "retry", "r", 3, "エラー時のリトライ回数")
+        rootCmd.Flags().IntVarP(&amp;retryWait, "wait", "", 5, "リトライ間の待機時間（秒）")
+        rootCmd.Flags().StringVarP(&amp;includePattern, "include", "i", "", "含めるファイルパターン（例: *.txt,*.docx）")
+        rootCmd.Flags().StringVarP(&amp;excludePattern, "exclude", "e", "", "除外するファイルパターン（例: *.tmp,*.bak）")
+        rootCmd.Flags().BoolVarP(&amp;mirror, "mirror", "m", false, "ミラーモード（宛先にない元ファイルを削除）")
+        rootCmd.Flags().BoolVarP(&amp;dryRun, "dry-run", "n", false, "ドライラン（実際にはコピーしない）")
+        rootCmd.Flags().BoolVarP(&amp;verbose, "verbose", "v", false, "詳細なログ出力")
+        rootCmd.Flags().BoolVarP(&amp;skipNewer, "skip-newer", "", false, "宛先の方が新しい場合はスキップ")
+        rootCmd.Flags().BoolVarP(&amp;noProgress, "no-progress", "", false, "進捗表示を無効化")
+        rootCmd.Flags().IntVarP(&amp;bufferSize, "buffer", "b", 8, "バッファサイズ（MB）")
+        rootCmd.Flags().BoolVarP(&amp;recursive, "recursive", "R", true, "サブディレクトリを再帰的にコピー")
+
+        // 同期モード関連のフラグ
+        rootCmd.Flags().StringVarP(&amp;syncMode, "mode", "", "normal", "同期モード (initial:初期同期, incremental:追加同期)")
+        rootCmd.Flags().StringVarP(&amp;syncDBPath, "db", "", "sync_state.db", "同期状態データベースのパス")
+        rootCmd.Flags().BoolVarP(&amp;verifyOnly, "verify-only", "", false, "コピーせずに検証のみを実行")
+        rootCmd.Flags().BoolVarP(&amp;verifyChanged, "verify-changed", "", false, "同期したファイルのみハッシュ検証を実行")
+        rootCmd.Flags().BoolVarP(&amp;verifyAll, "verify-all", "", false, "すべてのファイルのハッシュ検証を実行（最終検証）")
+        rootCmd.Flags().BoolVarP(&amp;includeFailed, "include-failed", "", true, "前回までに失敗したファイルも同期する")
+        rootCmd.Flags().IntVarP(&amp;maxFailCount, "max-fail-count", "", 5, "最大失敗回数（これを超えるとスキップ、0は無制限）")
+        rootCmd.Flags().StringVarP(&amp;finalReport, "final-report", "", "", "最終検証レポートの出力パス")
+
+        // dbCmdとそのサブコマンドを新規生成
+        dbCmd := &amp;cobra.Command{
+                Use:   "db",
+                Short: "同期データベースの閲覧・管理",
+                Long:  `同期データベースの閲覧・管理を行います。`,
+        }
+
+        dbCmd.PersistentFlags().StringP("db", "", "", "データベースファイルのパス")
+        dbCmd.PersistentFlags().StringP("status", "", "", "特定のステータスのファイルのみ対象")
+        dbCmd.PersistentFlags().StringP("sort-by", "", "path", "ソート項目 (path, size, mod_time, status, last_sync_time)")
+        dbCmd.PersistentFlags().BoolP("reverse", "", false, "逆順でソート")
+
+        listCmd := &amp;cobra.Command{
+                Use:   "list",
+                Short: "データベース内のファイル一覧を表示",
+                Long:  `データベースに記録されているファイルの一覧を表示します。`,
+                RunE:  listCmdRunE,
+        }
+        listCmd.Flags().IntP("limit", "", 0, "表示件数の制限")
+
+        statsCmd := &amp;cobra.Command{
+                Use:   "stats",
+                Short: "データベースの統計情報を表示",
+                Long:  `データベースの統計情報を表示します。`,
+                RunE:  statsCmdRunE,
+        }
+
+        exportCmd := &amp;cobra.Command{
+                Use:   "export",
+                Short: "データベースの内容をエクスポート",
+                Long:  `データベースの内容をCSVまたはJSON形式でエクスポートします。`,
+                RunE:  exportCmdRunE,
+        }
+        exportCmd.Flags().StringP("output", "", "", "出力ファイルのパス")
+        exportCmd.Flags().StringP("format", "", "csv", "出力形式 (csv, json)")
+
+        cleanCmd := &amp;cobra.Command{
+                Use:   "clean",
+                Short: "古いレコードを削除",
+                Long:  `指定された日数より古いレコードを削除します。`,
+                RunE:  cleanCmdRunE,
+        }
+        cleanCmd.Flags().BoolP("no-confirm", "", false, "確認なしで実行")
+
+        resetCmd := &amp;cobra.Command{
+                Use:   "reset",
+                Short: "データベースをリセット",
+                Long:  `データベースをリセットします（初期同期モード用）。`,
+                RunE:  resetCmdRunE,
+        }
+        resetCmd.Flags().BoolP("no-confirm", "", false, "確認なしで実行")
+
+        dbCmd.AddCommand(listCmd, statsCmd, exportCmd, cleanCmd, resetCmd)
+        rootCmd.AddCommand(dbCmd)
+
+        return rootCmd
+}</span>
+
+// rootCmdのRunEロジックを関数化
+func rootCmdRunE(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+        // 既存のrootCmd.RunEの内容をここに移植
+        // ...
+        return nil
+}</span>
+
+// Execute adds all child commands to the root command and sets flags appropriately.
+func Execute() error <span class="cov8" title="1">{
+        return rootCmd.Execute()
+}</span>
+
+func init() <span class="cov8" title="1">{
+        rootCmd = newRootCmd()
+        cobra.OnInitialize(initConfig)
+        // フラグ定義はnewRootCmd()内で行うため、ここでは削除
+}</span>
+
+// initConfig reads in config file and ENV variables if set.
+func initConfig() <span class="cov8" title="1">{
+        // 設定ファイル作成フラグの確認
+        if createConfig, _ := rootCmd.PersistentFlags().GetBool("create-config"); createConfig </span><span class="cov0" title="0">{
+                // 設定ファイル作成時は設定ファイルの読み込みをスキップ
+                return
+        }</span>
+
+        <span class="cov8" title="1">if cfgFile != "" </span><span class="cov0" title="0">{
+                // Use config file from the flag.
+                viper.SetConfigFile(cfgFile)
+        }</span> else<span class="cov8" title="1"> {
+                // まず実行ファイルと同じディレクトリを探す
+                exePath, err := os.Executable()
+                if err == nil </span><span class="cov8" title="1">{
+                        exeDir := filepath.Dir(exePath)
+                        viper.AddConfigPath(exeDir)
+                }</span>
+                // さらにホームディレクトリも探す
+                <span class="cov8" title="1">home, err := os.UserHomeDir()
+                if err == nil </span><span class="cov8" title="1">{
+                        viper.AddConfigPath(home)
+                }</span>
+                <span class="cov8" title="1">viper.SetConfigType("yaml")
+                viper.SetConfigName(".gopier")</span>
+        }
+
+        <span class="cov8" title="1">viper.AutomaticEnv() // read in environment variables that match
+
+        // If a config file is found, read it in.
+        if err := viper.ReadInConfig(); err == nil </span>{<span class="cov0" title="0">
+                // 設定ファイルが見つかった場合のみログ出力
+        }</span> else <span class="cov8" title="1">{
+                // 設定ファイルが見つからない場合は無視（デフォルト設定を使用）
+        }</span>
+
+        <span class="cov8" title="1">loadConfig(rootCmd)</span>
+}
+
+// validateConfig は設定値の妥当性をチェックする
+func validateConfig(config *Config) error <span class="cov8" title="1">{
+        var errors []string
+
+        // パフォーマンス設定の検証
+        if config.Workers &lt; 1 </span><span class="cov8" title="1">{
+                errors = append(errors, "workers: 1以上の値を指定してください")
+        }</span>
+        <span class="cov8" title="1">if config.BufferSize &lt; 1 </span><span class="cov8" title="1">{
+                errors = append(errors, "buffer_size: 1以上の値を指定してください")
+        }</span>
+        <span class="cov8" title="1">if config.RetryCount &lt; 0 </span><span class="cov8" title="1">{
+                errors = append(errors, "retry_count: 0以上の値を指定してください")
+        }</span>
+        <span class="cov8" title="1">if config.RetryWait &lt; 0 </span><span class="cov8" title="1">{
+                errors = append(errors, "retry_wait: 0以上の値を指定してください")
+        }</span>
+
+        // 同期設定の検証
+        <span class="cov8" title="1">if config.SyncMode != "" &amp;&amp; config.SyncMode != "normal" &amp;&amp; config.SyncMode != "initial" &amp;&amp; config.SyncMode != "incremental" </span><span class="cov8" title="1">{
+                errors = append(errors, "sync_mode: normal, initial, incrementalのいずれかを指定してください")
+        }</span>
+        <span class="cov8" title="1">if config.MaxFailCount &lt; 0 </span><span class="cov8" title="1">{
+                errors = append(errors, "max_fail_count: 0以上の値を指定してください")
+        }</span>
+
+        // ハッシュ設定の検証
+        <span class="cov8" title="1">if config.HashAlgorithm != "" </span><span class="cov8" title="1">{
+                validAlgorithms := []string{"md5", "sha1", "sha256", "sha512"}
+                valid := false
+                for _, algo := range validAlgorithms </span><span class="cov8" title="1">{
+                        if config.HashAlgorithm == algo </span><span class="cov8" title="1">{
+                                valid = true
+                                break</span>
+                        }
+                }
+                <span class="cov8" title="1">if !valid </span><span class="cov8" title="1">{
+                        errors = append(errors, "hash_algorithm: md5, sha1, sha256, sha512のいずれかを指定してください")
+                }</span>
+        }
+
+        // エラーがある場合はまとめて返す
+        <span class="cov8" title="1">if len(errors) &gt; 0 </span><span class="cov8" title="1">{
+                return fmt.Errorf("設定ファイルにエラーがあります:\n%s", strings.Join(errors, "\n"))
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// loadConfig は設定ファイルを読み込んでフラグにバインドする
+func loadConfig(cmd *cobra.Command) <span class="cov8" title="1">{
+        // 設定ファイルの値を構造体に読み込み
+        var config Config
+        if viper.ConfigFileUsed() != "" </span><span class="cov0" title="0">{
+                // 設定ファイルが存在する場合
+                if err := viper.Unmarshal(&amp;config); err != nil </span><span class="cov0" title="0">{
+                        fmt.Fprintf(os.Stderr, "設定ファイルの解析エラー: %v\n", err)
+                        return
+                }</span>
+        } else<span class="cov8" title="1"> {
+                // 設定ファイルが存在しない場合はデフォルト値を設定
+                config = Config{
+                        // パフォーマンス設定
+                        Workers:    runtime.NumCPU(),
+                        BufferSize: 8,
+                        RetryCount: 3,
+                        RetryWait:  5,
+
+                        // 動作設定
+                        Recursive:         true,
+                        Mirror:            false,
+                        DryRun:            false,
+                        Verbose:           false,
+                        SkipNewer:         false,
+                        NoProgress:        false,
+                        PreserveModTime:   true,
+                        OverwriteExisting: true,
+
+                        // 同期設定
+                        SyncMode:      "normal",
+                        SyncDBPath:    "sync_state.db",
+                        IncludeFailed: true,
+                        MaxFailCount:  5,
+
+                        // 検証設定
+                        VerifyOnly:    false,
+                        VerifyChanged: false,
+                        VerifyAll:     false,
+                        FinalReport:   "",
+
+                        // ハッシュ設定
+                        HashAlgorithm: "sha256",
+                        VerifyHash:    true,
+                }
+        }</span>
+
+        // 設定値の妥当性チェック
+        <span class="cov8" title="1">if err := validateConfig(&amp;config); err != nil </span><span class="cov0" title="0">{
+                fmt.Fprintf(os.Stderr, "設定ファイルの検証エラー: %v\n", err)
+                return
+        }</span>
+
+        // 設定ファイルの値をフラグにバインド（フラグが設定されていない場合のみ）
+        <span class="cov8" title="1">bindConfigToFlags(&amp;config, cmd)</span>
+}
+
+// bindConfigToFlags は設定ファイルの値をフラグにバインドする
+func bindConfigToFlags(config *Config, cmd *cobra.Command) <span class="cov8" title="1">{
+        // 基本設定
+        if sourceDir == "" &amp;&amp; config.Source != "" </span><span class="cov8" title="1">{
+                sourceDir = config.Source
+        }</span>
+        <span class="cov8" title="1">if destDir == "" &amp;&amp; config.Destination != "" </span><span class="cov8" title="1">{
+                destDir = config.Destination
+        }</span>
+        <span class="cov8" title="1">if logFile == "" &amp;&amp; config.LogFile != "" </span><span class="cov0" title="0">{
+                logFile = config.LogFile
+        }</span>
+
+        // パフォーマンス設定
+        <span class="cov8" title="1">if numWorkers &lt;= 0 &amp;&amp; config.Workers &gt; 0 </span><span class="cov8" title="1">{
+                numWorkers = config.Workers
+        }</span>
+        <span class="cov8" title="1">if bufferSize &lt;= 0 &amp;&amp; config.BufferSize &gt; 0 </span><span class="cov8" title="1">{
+                bufferSize = config.BufferSize
+        }</span>
+        <span class="cov8" title="1">if retryCount &lt;= 0 &amp;&amp; config.RetryCount &gt; 0 </span><span class="cov8" title="1">{
+                retryCount = config.RetryCount
+        }</span>
+        <span class="cov8" title="1">if retryWait &lt;= 0 &amp;&amp; config.RetryWait &gt; 0 </span><span class="cov8" title="1">{
+                retryWait = config.RetryWait
+        }</span>
+
+        // フィルタ設定
+        <span class="cov8" title="1">if includePattern == "" &amp;&amp; config.IncludePattern != "" </span><span class="cov8" title="1">{
+                includePattern = config.IncludePattern
+        }</span>
+        <span class="cov8" title="1">if excludePattern == "" &amp;&amp; config.ExcludePattern != "" </span><span class="cov8" title="1">{
+                excludePattern = config.ExcludePattern
+        }</span>
+
+        // 動作設定
+        <span class="cov8" title="1">if !cmd.Flags().Changed("recursive") &amp;&amp; config.Recursive </span><span class="cov8" title="1">{
+                recursive = config.Recursive
+        }</span>
+        <span class="cov8" title="1">if !cmd.Flags().Changed("mirror") &amp;&amp; config.Mirror </span><span class="cov8" title="1">{
+                mirror = config.Mirror
+        }</span>
+        <span class="cov8" title="1">if !cmd.Flags().Changed("dry-run") &amp;&amp; config.DryRun </span><span class="cov8" title="1">{
+                dryRun = config.DryRun
+        }</span>
+        <span class="cov8" title="1">if !cmd.Flags().Changed("verbose") &amp;&amp; config.Verbose </span><span class="cov8" title="1">{
+                verbose = config.Verbose
+        }</span>
+        <span class="cov8" title="1">if !cmd.Flags().Changed("skip-newer") &amp;&amp; config.SkipNewer </span><span class="cov8" title="1">{
+                skipNewer = config.SkipNewer
+        }</span>
+        <span class="cov8" title="1">if !cmd.Flags().Changed("no-progress") &amp;&amp; config.NoProgress </span><span class="cov0" title="0">{
+                noProgress = config.NoProgress
+        }</span>
+
+        // 同期設定
+        <span class="cov8" title="1">if syncMode == "" &amp;&amp; config.SyncMode != "" </span><span class="cov8" title="1">{
+                syncMode = config.SyncMode
+        }</span>
+        <span class="cov8" title="1">if syncDBPath == "" &amp;&amp; config.SyncDBPath != "" </span><span class="cov8" title="1">{
+                syncDBPath = config.SyncDBPath
+        }</span>
+        <span class="cov8" title="1">if !cmd.Flags().Changed("include-failed") &amp;&amp; config.IncludeFailed </span><span class="cov8" title="1">{
+                includeFailed = config.IncludeFailed
+        }</span>
+        <span class="cov8" title="1">if maxFailCount &lt;= 0 &amp;&amp; config.MaxFailCount &gt; 0 </span><span class="cov8" title="1">{
+                maxFailCount = config.MaxFailCount
+        }</span>
+
+        // 検証設定
+        <span class="cov8" title="1">if !cmd.Flags().Changed("verify-only") &amp;&amp; config.VerifyOnly </span><span class="cov8" title="1">{
+                verifyOnly = config.VerifyOnly
+        }</span>
+        <span class="cov8" title="1">if !cmd.Flags().Changed("verify-changed") &amp;&amp; config.VerifyChanged </span><span class="cov8" title="1">{
+                verifyChanged = config.VerifyChanged
+        }</span>
+        <span class="cov8" title="1">if !cmd.Flags().Changed("verify-all") &amp;&amp; config.VerifyAll </span><span class="cov8" title="1">{
+                verifyAll = config.VerifyAll
+        }</span>
+        <span class="cov8" title="1">if finalReport == "" &amp;&amp; config.FinalReport != "" </span><span class="cov8" title="1">{
+                finalReport = config.FinalReport
+        }</span>
+
+        // ハッシュ設定
+        <span class="cov8" title="1">if !cmd.Flags().Changed("verify-hash") &amp;&amp; config.VerifyHash </span><span class="cov8" title="1">{
+                // verifyHashフラグは存在しないので、verifyChangedまたはverifyAllに反映
+                if !verifyChanged &amp;&amp; !verifyAll </span><span class="cov8" title="1">{
+                        verifyChanged = config.VerifyChanged
+                }</span>
+        }
+}
+
+// createDefaultConfig はデフォルトの設定ファイルを作成する
+func createDefaultConfig(configPath string) error <span class="cov8" title="1">{
+        config := Config{
+                // パフォーマンス設定
+                Workers:    runtime.NumCPU(),
+                BufferSize: 8,
+                RetryCount: 3,
+                RetryWait:  5,
+
+                // 動作設定
+                Recursive:         true,
+                Mirror:            false,
+                DryRun:            false,
+                Verbose:           false,
+                SkipNewer:         false,
+                NoProgress:        false,
+                PreserveModTime:   true,
+                OverwriteExisting: true,
+
+                // 同期設定
+                SyncMode:      "normal",
+                SyncDBPath:    "sync_state.db",
+                IncludeFailed: true,
+                MaxFailCount:  5,
+
+                // 検証設定
+                VerifyOnly:    false,
+                VerifyChanged: false,
+                VerifyAll:     false,
+                FinalReport:   "",
+
+                // ハッシュ設定
+                HashAlgorithm: "sha256",
+                VerifyHash:    true,
+        }
+
+        // 設定値の妥当性チェック
+        if err := validateConfig(&amp;config); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("デフォルト設定の検証エラー: %w", err)
+        }</span>
+
+        // 設定ディレクトリの作成
+        <span class="cov8" title="1">configDir := filepath.Dir(configPath)
+        if err := os.MkdirAll(configDir, 0755); err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("設定ディレクトリの作成に失敗: %w", err)
+        }</span>
+
+        // YAMLファイルとして保存
+        <span class="cov8" title="1">data, err := yaml.Marshal(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("設定のマーシャルエラー: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">if err := os.WriteFile(configPath, data, 0644); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("設定ファイルの作成エラー: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// showCurrentConfig は現在の設定値を表示する
+func showCurrentConfig() <span class="cov8" title="1">{
+        config := Config{
+                // 基本設定
+                Source:      sourceDir,
+                Destination: destDir,
+                LogFile:     logFile,
+
+                // パフォーマンス設定
+                Workers:    numWorkers,
+                BufferSize: bufferSize,
+                RetryCount: retryCount,
+                RetryWait:  retryWait,
+
+                // フィルタ設定
+                IncludePattern: includePattern,
+                ExcludePattern: excludePattern,
+
+                // 動作設定
+                Recursive:         recursive,
+                Mirror:            mirror,
+                DryRun:            dryRun,
+                Verbose:           verbose,
+                SkipNewer:         skipNewer,
+                NoProgress:        noProgress,
+                PreserveModTime:   true, // デフォルト値
+                OverwriteExisting: !skipNewer,
+
+                // 同期設定
+                SyncMode:      syncMode,
+                SyncDBPath:    syncDBPath,
+                IncludeFailed: includeFailed,
+                MaxFailCount:  maxFailCount,
+
+                // 検証設定
+                VerifyOnly:    verifyOnly,
+                VerifyChanged: verifyChanged,
+                VerifyAll:     verifyAll,
+                FinalReport:   finalReport,
+
+                // ハッシュ設定
+                HashAlgorithm: "sha256", // デフォルト値
+                VerifyHash:    verifyChanged || verifyAll,
+        }
+
+        // YAML形式で出力
+        data, err := yaml.Marshal(config)
+        if err != nil </span><span class="cov0" title="0">{
+                fmt.Fprintf(os.Stderr, "設定のマーシャルエラー: %v\n", err)
+                return
+        }</span>
+
+        <span class="cov8" title="1">fmt.Println("現在の設定値:")
+        fmt.Println(string(data))</span>
+}
+
+// 各コマンドのRunE関数（cmd/db.goから移植）
+func listCmdRunE(cmd *cobra.Command, args []string) error <span class="cov8" title="1">{
+        dbPath, _ := cmd.Flags().GetString("db")
+        if dbPath == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+        }</span>
+
+        // データベースを開く
+        <span class="cov8" title="1">syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+        if err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("データベースのオープンに失敗: %w", err)
+        }</span>
+        <span class="cov8" title="1">defer syncDB.Close()
+
+        // ファイル一覧を取得
+        files, err := syncDB.GetAllFiles()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+        }</span>
+
+        // フィルタリング
+        <span class="cov8" title="1">dbStatus, _ := cmd.Flags().GetString("status")
+        if dbStatus != "" </span><span class="cov8" title="1">{
+                filtered := make([]database.FileInfo, 0)
+                for _, file := range files </span><span class="cov8" title="1">{
+                        if string(file.Status) == dbStatus </span><span class="cov8" title="1">{
+                                filtered = append(filtered, file)
+                        }</span>
+                }
+                <span class="cov8" title="1">files = filtered</span>
+        }
+
+        // ソート
+        <span class="cov8" title="1">dbSortBy, _ := cmd.Flags().GetString("sort-by")
+        dbReverse, _ := cmd.Flags().GetBool("reverse")
+        sortFiles(files, dbSortBy, dbReverse)
+
+        // 件数制限
+        dbLimit, _ := cmd.Flags().GetInt("limit")
+        if dbLimit &gt; 0 &amp;&amp; len(files) &gt; dbLimit </span><span class="cov8" title="1">{
+                files = files[:dbLimit]
+        }</span>
+
+        // 表示
+        <span class="cov8" title="1">fmt.Printf("データベース: %s\n", dbPath)
+        fmt.Printf("総ファイル数: %d\n\n", len(files))
+
+        if len(files) == 0 </span><span class="cov8" title="1">{
+                fmt.Println("ファイルが見つかりません。")
+                return nil
+        }</span>
+
+        // ヘッダー
+        <span class="cov8" title="1">fmt.Printf("%-50s %-10s %-20s %-15s %-20s\n", "パス", "サイズ", "更新日時", "ステータス", "最終同期")
+        fmt.Println(strings.Repeat("-", 120))
+
+        // ファイル一覧
+        for _, file := range files </span><span class="cov8" title="1">{
+                sizeStr := formatBytes(file.Size)
+                modTimeStr := file.ModTime.Format("2006-01-02 15:04:05")
+                syncTimeStr := file.LastSyncTime.Format("2006-01-02 15:04:05")
+                statusStr := string(file.Status)
+
+                fmt.Printf("%-50s %-10s %-20s %-15s %-20s\n",
+                        truncateString(file.Path, 50),
+                        sizeStr,
+                        modTimeStr,
+                        statusStr,
+                        syncTimeStr)
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+func statsCmdRunE(cmd *cobra.Command, args []string) error <span class="cov8" title="1">{
+        dbPath, _ := cmd.Flags().GetString("db")
+        if dbPath == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+        }</span>
+
+        // データベースを開く
+        <span class="cov8" title="1">syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("データベースのオープンに失敗: %w", err)
+        }</span>
+        <span class="cov8" title="1">defer syncDB.Close()
+
+        // 統計情報を取得
+        stats, err := syncDB.GetSyncStats()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("統計情報の取得に失敗: %w", err)
+        }</span>
+
+        // ファイル一覧を取得して詳細統計を計算
+        <span class="cov8" title="1">files, err := syncDB.GetAllFiles()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">fmt.Printf("データベース: %s\n", dbPath)
+        fmt.Println(strings.Repeat("=", 50))
+
+        // 基本統計
+        fmt.Printf("総ファイル数: %d\n", len(files))
+        fmt.Printf("総サイズ: %s\n", formatBytes(calculateTotalSize(files)))
+
+        // ステータス別統計
+        statusCount := make(map[database.FileStatus]int)
+        for _, file := range files </span><span class="cov8" title="1">{
+                statusCount[file.Status]++
+        }</span>
+
+        <span class="cov8" title="1">fmt.Println("\nステータス別統計:")
+        for status, count := range statusCount </span><span class="cov8" title="1">{
+                fmt.Printf("  %s: %d件\n", status, count)
+        }</span>
+
+        // 同期セッション統計
+        <span class="cov8" title="1">fmt.Println("\n同期セッション統計:")
+        for key, value := range stats </span><span class="cov8" title="1">{
+                fmt.Printf("  %s: %d\n", key, value)
+        }</span>
+
+        // 失敗回数統計
+        <span class="cov8" title="1">failCounts := make(map[int]int)
+        for _, file := range files </span><span class="cov8" title="1">{
+                failCounts[file.FailCount]++
+        }</span>
+
+        <span class="cov8" title="1">fmt.Println("\n失敗回数別統計:")
+        for failCount, count := range failCounts </span><span class="cov8" title="1">{
+                if failCount &gt; 0 </span><span class="cov8" title="1">{
+                        fmt.Printf("  失敗%d回: %d件\n", failCount, count)
+                }</span>
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+func exportCmdRunE(cmd *cobra.Command, args []string) error <span class="cov8" title="1">{
+        dbPath, _ := cmd.Flags().GetString("db")
+        dbOutput, _ := cmd.Flags().GetString("output")
+        dbFormat, _ := cmd.Flags().GetString("format")
+
+        if dbPath == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+        }</span>
+
+        <span class="cov8" title="1">if dbOutput == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("出力ファイルが指定されていません。--outputフラグを使用してください。")
+        }</span>
+
+        // データベースを開く
+        <span class="cov8" title="1">syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("データベースのオープンに失敗: %w", err)
+        }</span>
+        <span class="cov8" title="1">defer syncDB.Close()
+
+        // ファイル一覧を取得
+        files, err := syncDB.GetAllFiles()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+        }</span>
+
+        // フィルタリング
+        <span class="cov8" title="1">dbStatus, _ := cmd.Flags().GetString("status")
+        if dbStatus != "" </span><span class="cov0" title="0">{
+                filtered := make([]database.FileInfo, 0)
+                for _, file := range files </span><span class="cov0" title="0">{
+                        if string(file.Status) == dbStatus </span><span class="cov0" title="0">{
+                                filtered = append(filtered, file)
+                        }</span>
+                }
+                <span class="cov0" title="0">files = filtered</span>
+        }
+
+        // ソート
+        <span class="cov8" title="1">dbSortBy, _ := cmd.Flags().GetString("sort-by")
+        dbReverse, _ := cmd.Flags().GetBool("reverse")
+        sortFiles(files, dbSortBy, dbReverse)
+
+        // エクスポート
+        switch strings.ToLower(dbFormat) </span>{
+        case "csv":<span class="cov8" title="1">
+                err = exportToCSV(files, dbOutput)</span>
+        case "json":<span class="cov8" title="1">
+                err = exportToJSON(files, dbOutput)</span>
+        default:<span class="cov8" title="1">
+                return fmt.Errorf("サポートされていない形式です: %s", dbFormat)</span>
+        }
+        <span class="cov8" title="1">if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("エクスポートに失敗: %w", err)
+        }</span>
+        <span class="cov8" title="1">fmt.Printf("エクスポートが完了しました: %s\n", dbOutput)
+        return nil</span>
+}
+
+func cleanCmdRunE(cmd *cobra.Command, args []string) error <span class="cov8" title="1">{
+        dbPath, _ := cmd.Flags().GetString("db")
+        if dbPath == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+        }</span>
+
+        // データベースを開く
+        <span class="cov8" title="1">syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("データベースのオープンに失敗: %w", err)
+        }</span>
+        <span class="cov8" title="1">defer syncDB.Close()
+
+        // ファイル一覧を取得
+        files, err := syncDB.GetAllFiles()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+        }</span>
+
+        // 古いレコードを削除
+        <span class="cov8" title="1">cutoff := time.Now().AddDate(0, 0, -30) // デフォルト30日前
+        deletedCount := 0
+
+        for _, file := range files </span><span class="cov8" title="1">{
+                if file.LastSyncTime.Before(cutoff) </span><span class="cov8" title="1">{
+                        // レコードを削除（実装は後で追加）
+                        deletedCount++
+                }</span>
+        }
+
+        <span class="cov8" title="1">fmt.Printf("%d件の古いレコードを削除しました。\n", deletedCount)
+        return nil</span>
+}
+
+func resetCmdRunE(cmd *cobra.Command, args []string) error <span class="cov8" title="1">{
+        dbPath, _ := cmd.Flags().GetString("db")
+        dbNoConfirm, _ := cmd.Flags().GetBool("no-confirm")
+
+        if dbPath == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+        }</span>
+
+        // 確認（--no-confirmフラグが指定されていない場合のみ）
+        <span class="cov8" title="1">if !dbNoConfirm </span><span class="cov0" title="0">{
+                fmt.Printf("データベース %s をリセットしますか？ (y/N): ", dbPath)
+                var response string
+                fmt.Scanln(&amp;response)
+                if strings.ToLower(response) != "y" &amp;&amp; strings.ToLower(response) != "yes" </span><span class="cov0" title="0">{
+                        fmt.Println("リセットをキャンセルしました。")
+                        return nil
+                }</span>
+        }
+
+        // データベースを開く（初期同期モード）
+        <span class="cov8" title="1">syncDB, err := database.NewSyncDB(dbPath, database.InitialSync)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("データベースのオープンに失敗: %w", err)
+        }</span>
+        <span class="cov8" title="1">defer syncDB.Close()
+
+        // リセット
+        err = syncDB.ResetDatabase()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("データベースのリセットに失敗: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">fmt.Println("データベースをリセットしました。")
+        return nil</span>
+}
+
+// ヘルパー関数（cmd/db.goから移植）
+func sortFiles(files []database.FileInfo, sortBy string, reverse bool) <span class="cov8" title="1">{
+        sort.Slice(files, func(i, j int) bool </span><span class="cov8" title="1">{
+                var result bool
+                switch sortBy </span>{
+                case "path":<span class="cov8" title="1">
+                        result = files[i].Path &lt; files[j].Path</span>
+                case "size":<span class="cov8" title="1">
+                        result = files[i].Size &lt; files[j].Size</span>
+                case "mod_time":<span class="cov0" title="0">
+                        result = files[i].ModTime.Before(files[j].ModTime)</span>
+                case "status":<span class="cov0" title="0">
+                        result = string(files[i].Status) &lt; string(files[j].Status)</span>
+                case "last_sync_time":<span class="cov0" title="0">
+                        result = files[i].LastSyncTime.Before(files[j].LastSyncTime)</span>
+                default:<span class="cov0" title="0">
+                        result = files[i].Path &lt; files[j].Path</span>
+                }
+                <span class="cov8" title="1">if reverse </span><span class="cov0" title="0">{
+                        return !result
+                }</span>
+                <span class="cov8" title="1">return result</span>
+        })
+}
+
+func formatBytes(bytes int64) string <span class="cov8" title="1">{
+        const unit = 1024
+        if bytes &lt; unit </span><span class="cov8" title="1">{
+                return fmt.Sprintf("%d B", bytes)
+        }</span>
+        <span class="cov8" title="1">div, exp := int64(unit), 0
+        for n := bytes / unit; n &gt;= unit; n /= unit </span><span class="cov0" title="0">{
+                div *= unit
+                exp++
+        }</span>
+        <span class="cov8" title="1">return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])</span>
+}
+
+func truncateString(s string, maxLen int) string <span class="cov8" title="1">{
+        runes := []rune(s)
+        if len(runes) &lt;= maxLen </span><span class="cov8" title="1">{
+                return s
+        }</span>
+        <span class="cov8" title="1">if maxLen &lt;= 3 </span><span class="cov0" title="0">{
+                return "..."
+        }</span>
+        <span class="cov8" title="1">return string(runes[:maxLen-3]) + "..."</span>
+}
+
+func calculateTotalSize(files []database.FileInfo) int64 <span class="cov8" title="1">{
+        var total int64
+        for _, file := range files </span><span class="cov8" title="1">{
+                total += file.Size
+        }</span>
+        <span class="cov8" title="1">return total</span>
+}
+
+func exportToCSV(files []database.FileInfo, outputPath string) error <span class="cov8" title="1">{
+        file, err := os.Create(outputPath)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">defer file.Close()
+
+        writer := csv.NewWriter(file)
+        defer writer.Flush()
+
+        // ヘッダー
+        header := []string{"パス", "サイズ", "更新日時", "ステータス", "ソースハッシュ", "宛先ハッシュ", "失敗回数", "最終同期", "最終エラー"}
+        if err := writer.Write(header); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        // データ
+        <span class="cov8" title="1">for _, file := range files </span><span class="cov8" title="1">{
+                row := []string{
+                        file.Path,
+                        fmt.Sprintf("%d", file.Size),
+                        file.ModTime.Format(time.RFC3339),
+                        string(file.Status),
+                        file.SourceHash,
+                        file.DestHash,
+                        fmt.Sprintf("%d", file.FailCount),
+                        file.LastSyncTime.Format(time.RFC3339),
+                        file.LastError,
+                }
+                if err := writer.Write(row); err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+func exportToJSON(files []database.FileInfo, outputPath string) error <span class="cov8" title="1">{
+        file, err := os.Create(outputPath)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">defer file.Close()
+
+        encoder := json.NewEncoder(file)
+        encoder.SetIndent("", "  ")
+        return encoder.Encode(files)</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package copier
+
+import (
+        "context"
+        "fmt"
+        "io"
+        "os"
+        "path/filepath"
+        "sync"
+        "time"
+
+        "github.com/sakuhanight/gopier/internal/database"
+        "github.com/sakuhanight/gopier/internal/filter"
+        "github.com/sakuhanight/gopier/internal/hasher"
+        "github.com/sakuhanight/gopier/internal/logger"
+        "github.com/sakuhanight/gopier/internal/stats"
+)
+
+// CopyMode はコピーモードを表す型
+type CopyMode int
+
+const (
+        // ModeCopy は通常のコピーモード
+        ModeCopy CopyMode = iota
+        // ModeVerify は検証のみのモード
+        ModeVerify
+        // ModeCopyAndVerify はコピーと検証を行うモード
+        ModeCopyAndVerify
+)
+
+// ProgressCallback は進捗報告のためのコールバック関数型
+type ProgressCallback func(current, total int64, currentFile string)
+
+// Options はコピーオプションを表す構造体
+type Options struct {
+        BufferSize        int           // コピーバッファサイズ
+        Recursive         bool          // 再帰的にコピーするかどうか
+        PreserveModTime   bool          // 更新日時を保持するかどうか
+        VerifyHash        bool          // ハッシュ検証を行うかどうか
+        HashAlgorithm     string        // ハッシュアルゴリズム
+        OverwriteExisting bool          // 既存ファイルを上書きするかどうか
+        CreateDirs        bool          // 必要なディレクトリを作成するかどうか
+        MaxRetries        int           // 最大再試行回数
+        RetryDelay        time.Duration // 再試行の遅延時間
+        ProgressInterval  time.Duration // 進捗報告の間隔
+        MaxConcurrent     int           // 最大並行コピー数
+        Mode              CopyMode      // コピーモード
+}
+
+// DefaultOptions はデフォルトのオプションを返す
+func DefaultOptions() Options <span class="cov8" title="1">{
+        return Options{
+                BufferSize:        32 * 1024 * 1024, // 32MB
+                Recursive:         true,
+                PreserveModTime:   true,
+                VerifyHash:        true,
+                HashAlgorithm:     string(hasher.SHA256),
+                OverwriteExisting: true,
+                CreateDirs:        true,
+                MaxRetries:        3,
+                RetryDelay:        time.Second * 2,
+                ProgressInterval:  time.Second * 1,
+                MaxConcurrent:     4,
+                Mode:              ModeCopy,
+        }
+}</span>
+
+// FileCopier はファイルコピー処理を管理する構造体
+type FileCopier struct {
+        sourceDir    string
+        destDir      string
+        options      Options
+        stats        *stats.Stats
+        filter       *filter.Filter
+        hasher       *hasher.Hasher
+        db           *database.SyncDB
+        logger       *logger.Logger
+        progressChan chan string
+        progressFunc ProgressCallback
+        wg           sync.WaitGroup
+        semaphore    chan struct{}
+        ctx          context.Context
+        cancel       context.CancelFunc
+}
+
+// NewFileCopier は新しいFileCopierを作成する
+func NewFileCopier(sourceDir, destDir string, options Options, fileFilter *filter.Filter, syncDB *database.SyncDB, log *logger.Logger) *FileCopier <span class="cov8" title="1">{
+        ctx, cancel := context.WithCancel(context.Background())
+
+        // セマフォの初期化
+        semaphore := make(chan struct{}, options.MaxConcurrent)
+
+        // ハッシャーの初期化
+        hashAlgo := hasher.Algorithm(options.HashAlgorithm)
+        fileHasher := hasher.NewHasher(hashAlgo, options.BufferSize)
+
+        return &amp;FileCopier{
+                sourceDir:    sourceDir,
+                destDir:      destDir,
+                options:      options,
+                stats:        stats.NewStats(),
+                filter:       fileFilter,
+                hasher:       fileHasher,
+                db:           syncDB,
+                logger:       log,
+                progressChan: make(chan string, 100),
+                ctx:          ctx,
+                cancel:       cancel,
+                semaphore:    semaphore,
+        }
+}</span>
+
+// SetProgressCallback は進捗報告のコールバック関数を設定する
+func (fc *FileCopier) SetProgressCallback(callback ProgressCallback) <span class="cov8" title="1">{
+        fc.progressFunc = callback
+}</span>
+
+// GetStats は現在の統計情報を返す
+func (fc *FileCopier) GetStats() *stats.Stats <span class="cov8" title="1">{
+        return fc.stats
+}</span>
+
+// Cancel はコピー処理をキャンセルする
+func (fc *FileCopier) Cancel() <span class="cov8" title="1">{
+        fc.cancel()
+}</span>
+
+// CopyFiles はファイルをコピーする
+func (fc *FileCopier) CopyFiles() error <span class="cov8" title="1">{
+        // 同期セッションの開始
+        var sessionID int64
+        var err error
+        if fc.db != nil </span><span class="cov8" title="1">{
+                sessionID, err = fc.db.StartSyncSession()
+                if err != nil </span><span class="cov0" title="0">{
+                        // loggerでエラー出力
+                        if fc.logger != nil </span><span class="cov0" title="0">{
+                                if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                        fc.logger.Error("同期セッション開始エラー: %v", err)
+                                }</span> else<span class="cov0" title="0"> {
+                                        fc.logger.Error("セッション開始失敗")
+                                }</span>
+                        }
+                        <span class="cov0" title="0">return fmt.Errorf("同期セッション開始エラー: %w", err)</span>
+                }
+        }
+
+        // 進捗報告ゴルーチンの開始
+        <span class="cov8" title="1">if fc.progressFunc != nil </span><span class="cov8" title="1">{
+                go fc.reportProgress()
+        }</span>
+
+        // ソースディレクトリの存在確認
+        <span class="cov8" title="1">sourceInfo, err := os.Stat(fc.sourceDir)
+        if err != nil </span><span class="cov8" title="1">{
+                // loggerでエラー出力
+                if fc.logger != nil </span><span class="cov0" title="0">{
+                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("ソースディレクトリ(%s)の確認エラー: %v", fc.sourceDir, err)
+                        }</span> else<span class="cov0" title="0"> {
+                                fc.logger.Error("ソースディレクトリ確認失敗")
+                        }</span>
+                }
+                <span class="cov8" title="1">fc.stats.IncrementFailed()
+                return fmt.Errorf("ソースディレクトリ(%s)の確認エラー: %w", fc.sourceDir, err)</span>
+        }
+
+        // ソースがディレクトリの場合
+        <span class="cov8" title="1">if sourceInfo.IsDir() </span><span class="cov8" title="1">{
+                // 宛先ディレクトリの作成
+                if fc.options.CreateDirs </span><span class="cov8" title="1">{
+                        if err := os.MkdirAll(fc.destDir, 0755); err != nil </span><span class="cov0" title="0">{
+                                // loggerでエラー出力
+                                if fc.logger != nil </span><span class="cov0" title="0">{
+                                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                                fc.logger.Error("宛先ディレクトリ(%s)の作成エラー: %v", fc.destDir, err)
+                                        }</span> else<span class="cov0" title="0"> {
+                                                fc.logger.Error("宛先ディレクトリ作成失敗")
+                                        }</span>
+                                }
+                                <span class="cov0" title="0">return fmt.Errorf("宛先ディレクトリ(%s)の作成エラー: %w", fc.destDir, err)</span>
+                        }
+                }
+
+                // loggerで開始情報を出力
+                <span class="cov8" title="1">if fc.logger != nil </span><span class="cov8" title="1">{
+                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Info("ディレクトリコピー開始: %s -&gt; %s", fc.sourceDir, fc.destDir)
+                        }</span> else<span class="cov8" title="1"> {
+                                fc.logger.Info("ディレクトリコピー開始")
+                        }</span>
+                }
+
+                // ディレクトリのコピー
+                <span class="cov8" title="1">err = fc.copyDirectory(fc.sourceDir, fc.destDir)</span>
+        } else<span class="cov8" title="1"> {
+                // 単一ファイルのコピー
+                destPath := filepath.Join(fc.destDir, filepath.Base(fc.sourceDir))
+
+                // loggerで開始情報を出力
+                if fc.logger != nil </span><span class="cov0" title="0">{
+                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Info("ファイルコピー開始: %s -&gt; %s", fc.sourceDir, destPath)
+                        }</span> else<span class="cov0" title="0"> {
+                                fc.logger.Info("ファイルコピー開始")
+                        }</span>
+                }
+
+                <span class="cov8" title="1">err = fc.copyFile(fc.sourceDir, destPath)</span>
+        }
+
+        // すべてのゴルーチンの完了を待つ
+        <span class="cov8" title="1">fc.wg.Wait()
+
+        // チャンネルがまだ開いている場合のみ閉じる
+        select </span>{
+        case &lt;-fc.progressChan:<span class="cov0" title="0"></span>
+                // チャンネルは既に閉じられている
+        default:<span class="cov8" title="1">
+                close(fc.progressChan)</span>
+        }
+
+        // 同期セッションの終了
+        <span class="cov8" title="1">if fc.db != nil </span><span class="cov8" title="1">{
+                endErr := fc.db.EndSyncSession(
+                        sessionID,
+                        int(fc.stats.GetCopiedCount()),
+                        int(fc.stats.GetSkippedCount()),
+                        int(fc.stats.GetFailedCount()),
+                        fc.stats.GetCopiedBytes(),
+                )
+                if endErr != nil </span><span class="cov0" title="0">{
+                        // セッション終了エラーはログに記録するが、元のエラーを返す
+                        if fc.logger != nil </span><span class="cov0" title="0">{
+                                if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                        fc.logger.Warn("同期セッション終了エラー: %v", endErr)
+                                }</span> else<span class="cov0" title="0"> {
+                                        fc.logger.Warn("セッション終了エラー")
+                                }</span>
+                        }
+                }
+        }
+
+        // 完了情報を出力
+        <span class="cov8" title="1">if fc.logger != nil </span><span class="cov8" title="1">{
+                copiedCount := fc.stats.GetCopiedCount()
+                skippedCount := fc.stats.GetSkippedCount()
+                failedCount := fc.stats.GetFailedCount()
+                copiedBytes := fc.stats.GetCopiedBytes()
+
+                if fc.logger.Verbose </span><span class="cov0" title="0">{
+                        fc.logger.Info("コピー完了: コピー=%d, スキップ=%d, 失敗=%d, バイト=%d",
+                                copiedCount, skippedCount, failedCount, copiedBytes)
+                }</span> else<span class="cov8" title="1"> {
+                        fc.logger.Info("コピー完了: %dファイル", copiedCount+skippedCount+failedCount)
+                }</span>
+        }
+
+        <span class="cov8" title="1">return err</span>
+}
+
+// copyDirectory はディレクトリを再帰的にコピーする
+func (fc *FileCopier) copyDirectory(sourceDir, destDir string) error <span class="cov8" title="1">{
+        // コンテキストのキャンセル確認
+        select </span>{
+        case &lt;-fc.ctx.Done():<span class="cov0" title="0">
+                return fmt.Errorf("コピー処理がキャンセルされました")</span>
+        default:<span class="cov8" title="1"></span>
+        }
+
+        // ソースディレクトリを開く
+        <span class="cov8" title="1">entries, err := os.ReadDir(sourceDir)
+        if err != nil </span><span class="cov8" title="1">{
+                // loggerでエラー出力
+                if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                        fc.logger.Error("ディレクトリ(%s)の読み込みエラー: %v", sourceDir, err)
+                }</span>
+                <span class="cov8" title="1">return fmt.Errorf("ディレクトリ(%s)の読み込みエラー: %w", sourceDir, err)</span>
+        }
+
+        // 宛先ディレクトリの作成
+        <span class="cov8" title="1">if fc.options.CreateDirs </span><span class="cov8" title="1">{
+                if err := os.MkdirAll(destDir, 0755); err != nil </span><span class="cov0" title="0">{
+                        // loggerでエラー出力
+                        if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("宛先ディレクトリ(%s)の作成エラー: %v", destDir, err)
+                        }</span>
+                        <span class="cov0" title="0">return fmt.Errorf("宛先ディレクトリ(%s)の作成エラー: %w", destDir, err)</span>
+                }
+        }
+
+        // 各エントリの処理
+        <span class="cov8" title="1">for _, entry := range entries </span><span class="cov8" title="1">{
+                sourcePath := filepath.Join(sourceDir, entry.Name())
+                destPath := filepath.Join(destDir, entry.Name())
+
+                // ディレクトリの場合
+                if entry.IsDir() </span><span class="cov8" title="1">{
+                        if !fc.options.Recursive </span><span class="cov8" title="1">{
+                                continue</span>
+                        }
+
+                        // 再帰的にコピー
+                        <span class="cov8" title="1">if err := fc.copyDirectory(sourcePath, destPath); err != nil </span><span class="cov0" title="0">{
+                                // loggerでエラー出力
+                                if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                                        fc.logger.Error("サブディレクトリ(%s)のコピーエラー: %v", sourcePath, err)
+                                }</span>
+                                <span class="cov0" title="0">return err</span>
+                        }
+                        <span class="cov8" title="1">continue</span>
+                }
+
+                // ファイルの場合
+                <span class="cov8" title="1">info, err := entry.Info()
+                if err != nil </span><span class="cov0" title="0">{
+                        fc.stats.IncrementFailed()
+
+                        // loggerでエラー出力
+                        if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("ファイル情報取得エラー: %s: %v", sourcePath, err)
+                        }</span>
+                        <span class="cov0" title="0">return fmt.Errorf("ファイル情報取得エラー: %w", err)</span>
+                }
+
+                // フィルタリング
+                <span class="cov8" title="1">if fc.filter != nil &amp;&amp; !fc.filter.ShouldInclude(sourcePath) </span><span class="cov8" title="1">{
+                        // ファイルをスキップ
+                        fc.stats.IncrementSkipped(info.Size())
+
+                        // データベースに記録
+                        if fc.db != nil </span><span class="cov0" title="0">{
+                                relPath, _ := filepath.Rel(fc.sourceDir, sourcePath)
+                                fileInfo := database.FileInfo{
+                                        Path:         relPath,
+                                        Size:         info.Size(),
+                                        ModTime:      info.ModTime(),
+                                        Status:       database.StatusSkipped,
+                                        LastSyncTime: time.Now(),
+                                        LastError:    "フィルタによりスキップ",
+                                }
+                                fc.db.AddFile(fileInfo)
+                        }</span>
+
+                        // loggerでスキップ情報を出力
+                        <span class="cov8" title="1">if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                                relPath, _ := filepath.Rel(fc.sourceDir, sourcePath)
+                                fc.logger.Info("ファイルをスキップ（フィルタ）: %s", relPath)
+                        }</span>
+
+                        <span class="cov8" title="1">continue</span>
+                }
+
+                // 非同期でファイルをコピー
+                <span class="cov8" title="1">fc.wg.Add(1)
+                go func(src, dst string) </span><span class="cov8" title="1">{
+                        defer fc.wg.Done()
+
+                        // セマフォの取得
+                        fc.semaphore &lt;- struct{}{}
+                        defer func() </span><span class="cov8" title="1">{
+                                &lt;-fc.semaphore
+                        }</span>()
+
+                        <span class="cov8" title="1">if err := fc.copyFile(src, dst); err != nil </span><span class="cov8" title="1">{
+                                // loggerでエラー出力（非同期処理なので詳細は出力しない）
+                                if fc.logger != nil </span><span class="cov0" title="0">{
+                                        relPath, _ := filepath.Rel(fc.sourceDir, src)
+                                        fc.logger.Error("ファイルコピーエラー: %s", relPath)
+                                }</span>
+                        }
+                }(sourcePath, destPath)
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// copyFile は単一ファイルをコピーする
+func (fc *FileCopier) copyFile(sourcePath, destPath string) error <span class="cov8" title="1">{
+        // コンテキストのキャンセル確認
+        select </span>{
+        case &lt;-fc.ctx.Done():<span class="cov0" title="0">
+                return fmt.Errorf("コピー処理がキャンセルされました")</span>
+        default:<span class="cov8" title="1"></span>
+        }
+
+        // 相対パスの計算
+        <span class="cov8" title="1">relPath, err := filepath.Rel(fc.sourceDir, sourcePath)
+        if err != nil </span><span class="cov0" title="0">{
+                relPath = filepath.Base(sourcePath)
+        }</span>
+
+        // 進捗報告
+        <span class="cov8" title="1">if fc.progressFunc != nil &amp;&amp; fc.progressChan != nil </span><span class="cov8" title="1">{
+                select </span>{
+                case fc.progressChan &lt;- relPath:<span class="cov8" title="1"></span>
+                        // 正常に送信
+                default:<span class="cov0" title="0"></span>
+                        // チャンネルが閉じられているか、バッファが一杯
+                case &lt;-fc.ctx.Done():<span class="cov0" title="0">
+                        // コンテキストがキャンセルされた場合
+                        return fc.ctx.Err()</span>
+                }
+        }
+
+        // データベース内の既存ファイル情報を確認
+        <span class="cov8" title="1">var fileInfo *database.FileInfo
+        if fc.db != nil </span><span class="cov8" title="1">{
+                fileInfo, err = fc.db.GetFile(relPath)
+                if err != nil </span><span class="cov8" title="1">{
+                        if fc.logger != nil </span><span class="cov0" title="0">{
+                                if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                        fc.logger.Warn("データベース検索エラー: %v", err)
+                                }</span>
+                        }
+                }
+        }
+
+        // ソースファイルの情報を取得
+        <span class="cov8" title="1">sourceInfo, err := os.Stat(sourcePath)
+        if err != nil </span><span class="cov8" title="1">{
+                fc.stats.IncrementFailed()
+
+                // データベースに記録
+                if fc.db != nil </span><span class="cov0" title="0">{
+                        errInfo := database.FileInfo{
+                                Path:         relPath,
+                                Status:       database.StatusFailed,
+                                LastSyncTime: time.Now(),
+                                LastError:    fmt.Sprintf("ソースファイル確認エラー: %v", err),
+                        }
+                        fc.db.AddFile(errInfo)
+                }</span>
+
+                // loggerでエラー出力
+                <span class="cov8" title="1">if fc.logger != nil </span><span class="cov0" title="0">{
+                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("ソースファイル(%s)の確認エラー: %v", sourcePath, err)
+                        }</span> else<span class="cov0" title="0"> {
+                                fc.logger.Error("ファイル確認失敗: %s", relPath)
+                        }</span>
+                }
+
+                <span class="cov8" title="1">return fmt.Errorf("ソースファイル(%s)の確認エラー: %w", sourcePath, err)</span>
+        }
+
+        // 検証モードの場合
+        <span class="cov8" title="1">if fc.options.Mode == ModeVerify </span><span class="cov8" title="1">{
+                return fc.verifyFile(sourcePath, destPath, relPath, sourceInfo)
+        }</span>
+
+        // 宛先ファイルの存在確認
+        <span class="cov8" title="1">destInfo, err := os.Stat(destPath)
+        if err == nil </span><span class="cov8" title="1">{
+                // 宛先ファイルが存在する場合
+
+                // 上書きが許可されていない場合はスキップ
+                if !fc.options.OverwriteExisting </span><span class="cov8" title="1">{
+                        fc.stats.IncrementSkipped(sourceInfo.Size())
+
+                        // データベースに記録
+                        if fc.db != nil </span><span class="cov0" title="0">{
+                                skipInfo := database.FileInfo{
+                                        Path:         relPath,
+                                        Size:         sourceInfo.Size(),
+                                        ModTime:      sourceInfo.ModTime(),
+                                        Status:       database.StatusSkipped,
+                                        LastSyncTime: time.Now(),
+                                        LastError:    "宛先ファイルが既に存在します",
+                                }
+                                fc.db.AddFile(skipInfo)
+                        }</span>
+
+                        // loggerでスキップ情報を出力
+                        <span class="cov8" title="1">if fc.logger != nil </span><span class="cov0" title="0">{
+                                if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                        fc.logger.Info("ファイルをスキップ（上書き無効）: %s", relPath)
+                                }</span>
+                        }
+
+                        <span class="cov8" title="1">return nil</span>
+                }
+
+                // サイズと更新時刻が同じ場合はスキップ
+                <span class="cov8" title="1">if sourceInfo.Size() == destInfo.Size() &amp;&amp; sourceInfo.ModTime().Equal(destInfo.ModTime()) </span><span class="cov0" title="0">{
+                        fc.stats.IncrementSkipped(sourceInfo.Size())
+
+                        // データベースに記録
+                        if fc.db != nil </span><span class="cov0" title="0">{
+                                skipInfo := database.FileInfo{
+                                        Path:         relPath,
+                                        Size:         sourceInfo.Size(),
+                                        ModTime:      sourceInfo.ModTime(),
+                                        Status:       database.StatusSkipped,
+                                        LastSyncTime: time.Now(),
+                                }
+                                fc.db.AddFile(skipInfo)
+                        }</span>
+
+                        // loggerでスキップ情報を出力
+                        <span class="cov0" title="0">if fc.logger != nil </span><span class="cov0" title="0">{
+                                if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                        fc.logger.Info("ファイルをスキップ（内容同一）: %s", relPath)
+                                }</span>
+                        }
+
+                        // 検証と同時コピーモードの場合は検証も行う
+                        <span class="cov0" title="0">if fc.options.Mode == ModeCopyAndVerify </span><span class="cov0" title="0">{
+                                return fc.verifyFile(sourcePath, destPath, relPath, sourceInfo)
+                        }</span>
+
+                        <span class="cov0" title="0">return nil</span>
+                }
+        } else<span class="cov8" title="1"> if !os.IsNotExist(err) </span><span class="cov8" title="1">{
+                // 存在確認でエラーが発生した場合（存在しない以外のエラー）
+                fc.stats.IncrementFailed()
+
+                // データベースに記録
+                if fc.db != nil </span><span class="cov0" title="0">{
+                        errInfo := database.FileInfo{
+                                Path:         relPath,
+                                Size:         sourceInfo.Size(),
+                                ModTime:      sourceInfo.ModTime(),
+                                Status:       database.StatusFailed,
+                                LastSyncTime: time.Now(),
+                                LastError:    fmt.Sprintf("宛先ファイル確認エラー: %v", err),
+                        }
+                        fc.db.AddFile(errInfo)
+                }</span>
+
+                // loggerでエラー出力
+                <span class="cov8" title="1">if fc.logger != nil </span><span class="cov0" title="0">{
+                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("宛先ファイル(%s)の確認エラー: %v", destPath, err)
+                        }</span> else<span class="cov0" title="0"> {
+                                fc.logger.Error("宛先ファイル確認失敗: %s", relPath)
+                        }</span>
+                }
+
+                <span class="cov8" title="1">return fmt.Errorf("宛先ファイル(%s)の確認エラー: %w", destPath, err)</span>
+        }
+
+        // 宛先ディレクトリの作成
+        <span class="cov8" title="1">if fc.options.CreateDirs </span><span class="cov8" title="1">{
+                destDir := filepath.Dir(destPath)
+                if err := os.MkdirAll(destDir, 0755); err != nil </span><span class="cov0" title="0">{
+                        fc.stats.IncrementFailed()
+
+                        // データベースに記録
+                        if fc.db != nil </span><span class="cov0" title="0">{
+                                errInfo := database.FileInfo{
+                                        Path:         relPath,
+                                        Size:         sourceInfo.Size(),
+                                        ModTime:      sourceInfo.ModTime(),
+                                        Status:       database.StatusFailed,
+                                        LastSyncTime: time.Now(),
+                                        LastError:    fmt.Sprintf("宛先ディレクトリ作成エラー: %v", err),
+                                }
+                                fc.db.AddFile(errInfo)
+                        }</span>
+
+                        // loggerでエラー出力
+                        <span class="cov0" title="0">if fc.logger != nil </span><span class="cov0" title="0">{
+                                if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                        fc.logger.Error("宛先ディレクトリ(%s)の作成エラー: %v", destDir, err)
+                                }</span> else<span class="cov0" title="0"> {
+                                        fc.logger.Error("ディレクトリ作成失敗: %s", relPath)
+                                }</span>
+                        }
+
+                        <span class="cov0" title="0">return fmt.Errorf("宛先ディレクトリ(%s)の作成エラー: %w", destDir, err)</span>
+                }
+        }
+
+        // ファイルのコピー（リトライロジック付き）
+        <span class="cov8" title="1">var copyErr error
+        for retry := 0; retry &lt;= fc.options.MaxRetries; retry++ </span><span class="cov8" title="1">{
+                if retry &gt; 0 </span><span class="cov8" title="1">{
+                        // リトライ前に遅延
+                        time.Sleep(fc.options.RetryDelay)
+
+                        // loggerでリトライ情報を出力
+                        if fc.logger != nil </span><span class="cov0" title="0">{
+                                if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                        fc.logger.Warn("ファイル '%s' のコピーをリトライします (%d/%d): エラー: %v", relPath, retry, fc.options.MaxRetries, copyErr)
+                                }</span> else<span class="cov0" title="0"> {
+                                        fc.logger.Warn("ファイル '%s' のコピーをリトライします (%d/%d)", relPath, retry, fc.options.MaxRetries)
+                                }</span>
+                        }
+                }
+
+                // ファイルのコピー
+                <span class="cov8" title="1">copyErr = fc.doCopyFile(sourcePath, destPath, sourceInfo)
+                if copyErr == nil </span><span class="cov8" title="1">{
+                        break</span>
+                }
+        }
+
+        // すべてのリトライが失敗した場合
+        <span class="cov8" title="1">if copyErr != nil </span><span class="cov8" title="1">{
+                fc.stats.IncrementFailed()
+
+                // データベースに記録
+                if fc.db != nil </span><span class="cov0" title="0">{
+                        failCount := 0
+                        if fileInfo != nil </span><span class="cov0" title="0">{
+                                failCount = fileInfo.FailCount + 1
+                        }</span>
+
+                        <span class="cov0" title="0">errInfo := database.FileInfo{
+                                Path:         relPath,
+                                Size:         sourceInfo.Size(),
+                                ModTime:      sourceInfo.ModTime(),
+                                Status:       database.StatusFailed,
+                                FailCount:    failCount,
+                                LastSyncTime: time.Now(),
+                                LastError:    fmt.Sprintf("ファイルコピーエラー: %v", copyErr),
+                        }
+                        fc.db.AddFile(errInfo)</span>
+                }
+
+                // loggerでエラー出力
+                <span class="cov8" title="1">if fc.logger != nil </span><span class="cov0" title="0">{
+                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("ファイル '%s' のコピーに失敗しました: %v", relPath, copyErr)
+                        }</span> else<span class="cov0" title="0"> {
+                                fc.logger.Error("コピー失敗: %s", relPath)
+                        }</span>
+                }
+
+                <span class="cov8" title="1">return fmt.Errorf("ファイル '%s' のコピーに失敗しました: %w", relPath, copyErr)</span>
+        }
+
+        // コピー成功の記録
+        <span class="cov8" title="1">fc.stats.IncrementCopied(sourceInfo.Size())
+
+        // データベースに記録
+        if fc.db != nil </span><span class="cov8" title="1">{
+                successInfo := database.FileInfo{
+                        Path:         relPath,
+                        Size:         sourceInfo.Size(),
+                        ModTime:      sourceInfo.ModTime(),
+                        Status:       database.StatusSuccess,
+                        LastSyncTime: time.Now(),
+                }
+                fc.db.AddFile(successInfo)
+        }</span>
+
+        // loggerで成功情報を出力
+        <span class="cov8" title="1">if fc.logger != nil </span><span class="cov8" title="1">{
+                if fc.logger.Verbose </span><span class="cov0" title="0">{
+                        fc.logger.Info("ファイルコピー成功: %s (%d bytes)", relPath, sourceInfo.Size())
+                }</span> else<span class="cov8" title="1"> {
+                        fc.logger.Info("コピー成功: %s", relPath)
+                }</span>
+        }
+
+        // 検証と同時コピーモードの場合は検証も行う
+        <span class="cov8" title="1">if fc.options.Mode == ModeCopyAndVerify </span><span class="cov8" title="1">{
+                return fc.verifyFile(sourcePath, destPath, relPath, sourceInfo)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// doCopyFile は実際のファイルコピー処理を行う
+func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.FileInfo) error <span class="cov8" title="1">{
+        // ソースファイルを開く
+        sourceFile, err := os.Open(sourcePath)
+        if err != nil </span><span class="cov8" title="1">{
+                // loggerでエラー出力
+                if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                        fc.logger.Error("ソースファイル(%s)を開けません: %v", sourcePath, err)
+                }</span>
+                <span class="cov8" title="1">return fmt.Errorf("ソースファイル(%s)を開けません: %w", sourcePath, err)</span>
+        }
+        <span class="cov8" title="1">defer sourceFile.Close()
+
+        // 宛先ファイルを作成
+        destFile, err := os.Create(destPath)
+        if err != nil </span><span class="cov8" title="1">{
+                // loggerでエラー出力
+                if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                        fc.logger.Error("宛先ファイル(%s)を作成できません: %v", destPath, err)
+                }</span>
+                <span class="cov8" title="1">return fmt.Errorf("宛先ファイル(%s)を作成できません: %w", destPath, err)</span>
+        }
+        <span class="cov8" title="1">defer destFile.Close()
+
+        // バッファを作成
+        buffer := make([]byte, fc.options.BufferSize)
+
+        // ファイルをコピー
+        copiedBytes, err := io.CopyBuffer(destFile, sourceFile, buffer)
+        if err != nil </span><span class="cov0" title="0">{
+                // loggerでエラー出力
+                if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                        fc.logger.Error("ファイルコピーエラー: %s -&gt; %s: %v", sourcePath, destPath, err)
+                }</span>
+                <span class="cov0" title="0">return fmt.Errorf("ファイルコピーエラー: %w", err)</span>
+        }
+
+        // コピーされたバイト数の確認
+        <span class="cov8" title="1">if copiedBytes != sourceInfo.Size() </span><span class="cov0" title="0">{
+                // loggerで警告出力
+                if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                        fc.logger.Warn("コピーされたバイト数が一致しません: 期待値=%d, 実際=%d", sourceInfo.Size(), copiedBytes)
+                }</span>
+        }
+
+        // ファイルを閉じる（エラーチェック付き）
+        <span class="cov8" title="1">if err = destFile.Close(); err != nil </span><span class="cov0" title="0">{
+                // loggerでエラー出力
+                if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                        fc.logger.Error("宛先ファイル(%s)を閉じられません: %v", destPath, err)
+                }</span>
+                <span class="cov0" title="0">return fmt.Errorf("宛先ファイル(%s)を閉じられません: %w", destPath, err)</span>
+        }
+
+        // 更新日時の保持
+        <span class="cov8" title="1">if fc.options.PreserveModTime </span><span class="cov8" title="1">{
+                if err = os.Chtimes(destPath, time.Now(), sourceInfo.ModTime()); err != nil </span><span class="cov0" title="0">{
+                        // loggerでエラー出力
+                        if fc.logger != nil &amp;&amp; fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("更新日時の設定エラー: %s: %v", destPath, err)
+                        }</span>
+                        <span class="cov0" title="0">return fmt.Errorf("更新日時の設定エラー: %w", err)</span>
+                }
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// verifyFile はファイルのハッシュ検証を行う
+func (fc *FileCopier) verifyFile(sourcePath, destPath, relPath string, sourceInfo os.FileInfo) error <span class="cov8" title="1">{
+        // ハッシュ検証が無効の場合はスキップ
+        if !fc.options.VerifyHash </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+
+        // 宛先ファイルの存在確認
+        <span class="cov8" title="1">if _, err := os.Stat(destPath); os.IsNotExist(err) </span><span class="cov8" title="1">{
+                // データベースに記録
+                if fc.db != nil </span><span class="cov0" title="0">{
+                        errInfo := database.FileInfo{
+                                Path:         relPath,
+                                Size:         sourceInfo.Size(),
+                                ModTime:      sourceInfo.ModTime(),
+                                Status:       database.StatusMismatch,
+                                LastSyncTime: time.Now(),
+                                LastError:    "宛先ファイルが存在しません",
+                        }
+                        fc.db.AddFile(errInfo)
+                }</span>
+
+                // loggerでエラー出力
+                <span class="cov8" title="1">if fc.logger != nil </span><span class="cov0" title="0">{
+                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("宛先ファイル(%s)が存在しません", destPath)
+                        }</span> else<span class="cov0" title="0"> {
+                                fc.logger.Error("検証失敗: %s (宛先ファイルなし)", relPath)
+                        }</span>
+                }
+
+                <span class="cov8" title="1">return fmt.Errorf("宛先ファイル '%s' が存在しません", destPath)</span>
+        }
+
+        // ソースファイルのハッシュを計算
+        <span class="cov8" title="1">sourceHash, err := fc.hasher.HashFile(sourcePath)
+        if err != nil </span><span class="cov8" title="1">{
+                // データベースに記録
+                if fc.db != nil </span><span class="cov0" title="0">{
+                        errInfo := database.FileInfo{
+                                Path:         relPath,
+                                Size:         sourceInfo.Size(),
+                                ModTime:      sourceInfo.ModTime(),
+                                Status:       database.StatusFailed,
+                                LastSyncTime: time.Now(),
+                                LastError:    fmt.Sprintf("ソースハッシュ計算エラー: %v", err),
+                        }
+                        fc.db.AddFile(errInfo)
+                }</span>
+
+                // loggerでエラー出力
+                <span class="cov8" title="1">if fc.logger != nil </span><span class="cov0" title="0">{
+                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("ソースファイル(%s)のハッシュ計算エラー: %v", sourcePath, err)
+                        }</span> else<span class="cov0" title="0"> {
+                                fc.logger.Error("ハッシュ計算失敗: %s", relPath)
+                        }</span>
+                }
+
+                <span class="cov8" title="1">return fmt.Errorf("ソースファイル(%s)のハッシュ計算エラー: %w", sourcePath, err)</span>
+        }
+
+        // 宛先ファイルのハッシュを計算
+        <span class="cov8" title="1">destHash, err := fc.hasher.HashFile(destPath)
+        if err != nil </span><span class="cov0" title="0">{
+                // データベースに記録
+                if fc.db != nil </span><span class="cov0" title="0">{
+                        errInfo := database.FileInfo{
+                                Path:         relPath,
+                                Size:         sourceInfo.Size(),
+                                ModTime:      sourceInfo.ModTime(),
+                                Status:       database.StatusFailed,
+                                LastSyncTime: time.Now(),
+                                LastError:    fmt.Sprintf("宛先ハッシュ計算エラー: %v", err),
+                        }
+                        fc.db.AddFile(errInfo)
+                }</span>
+
+                // loggerでエラー出力
+                <span class="cov0" title="0">if fc.logger != nil </span><span class="cov0" title="0">{
+                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("宛先ファイル(%s)のハッシュ計算エラー: %v", destPath, err)
+                        }</span> else<span class="cov0" title="0"> {
+                                fc.logger.Error("ハッシュ計算失敗: %s", relPath)
+                        }</span>
+                }
+
+                <span class="cov0" title="0">return fmt.Errorf("宛先ファイル(%s)のハッシュ計算エラー: %w", destPath, err)</span>
+        }
+
+        // ハッシュ値をデータベースに記録
+        <span class="cov8" title="1">if fc.db != nil </span><span class="cov0" title="0">{
+                fc.db.UpdateFileHash(relPath, sourceHash, destHash)
+        }</span>
+
+        // ハッシュ値の比較
+        <span class="cov8" title="1">if sourceHash != destHash </span><span class="cov8" title="1">{
+                // データベースに記録
+                if fc.db != nil </span><span class="cov0" title="0">{
+                        errInfo := database.FileInfo{
+                                Path:         relPath,
+                                Size:         sourceInfo.Size(),
+                                ModTime:      sourceInfo.ModTime(),
+                                Status:       database.StatusMismatch,
+                                SourceHash:   sourceHash,
+                                DestHash:     destHash,
+                                LastSyncTime: time.Now(),
+                                LastError:    "ハッシュ値が一致しません",
+                        }
+                        fc.db.AddFile(errInfo)
+                }</span>
+
+                // loggerでエラー出力
+                <span class="cov8" title="1">if fc.logger != nil </span><span class="cov0" title="0">{
+                        if fc.logger.Verbose </span><span class="cov0" title="0">{
+                                fc.logger.Error("ファイル '%s' のハッシュ値が一致しません (ソース: %s, 宛先: %s)", relPath, sourceHash, destHash)
+                        }</span> else<span class="cov0" title="0"> {
+                                fc.logger.Error("ハッシュ不一致: %s", relPath)
+                        }</span>
+                }
+
+                <span class="cov8" title="1">return fmt.Errorf("ファイル '%s' のハッシュ値が一致しません (ソース: %s, 宛先: %s)", relPath, sourceHash, destHash)</span>
+        }
+
+        // 検証成功の記録
+        <span class="cov8" title="1">if fc.db != nil </span><span class="cov0" title="0">{
+                verifyInfo := database.FileInfo{
+                        Path:         relPath,
+                        Size:         sourceInfo.Size(),
+                        ModTime:      sourceInfo.ModTime(),
+                        Status:       database.StatusVerified,
+                        SourceHash:   sourceHash,
+                        DestHash:     destHash,
+                        LastSyncTime: time.Now(),
+                }
+                fc.db.AddFile(verifyInfo)
+        }</span>
+
+        // loggerで成功情報を出力
+        <span class="cov8" title="1">if fc.logger != nil </span><span class="cov0" title="0">{
+                if fc.logger.Verbose </span><span class="cov0" title="0">{
+                        fc.logger.Info("ファイル検証成功: %s (ハッシュ: %s)", relPath, sourceHash)
+                }</span> else<span class="cov0" title="0"> {
+                        fc.logger.Info("検証成功: %s", relPath)
+                }</span>
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// reportProgress は進捗報告を行うゴルーチン
+func (fc *FileCopier) reportProgress() <span class="cov8" title="1">{
+        ticker := time.NewTicker(fc.options.ProgressInterval)
+        defer ticker.Stop()
+
+        var currentFile string
+
+        for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-fc.ctx.Done():<span class="cov0" title="0">
+                        return</span>
+                case file, ok := &lt;-fc.progressChan:<span class="cov8" title="1">
+                        if !ok </span><span class="cov8" title="1">{
+                                return
+                        }</span>
+                        <span class="cov8" title="1">currentFile = file</span>
+                case &lt;-ticker.C:<span class="cov8" title="1">
+                        if fc.progressFunc != nil </span><span class="cov8" title="1">{
+                                totalFiles, _, _ := fc.stats.GetProgressStats()
+                                fc.progressFunc(
+                                        fc.stats.GetCopiedCount()+fc.stats.GetSkippedCount(),
+                                        totalFiles,
+                                        currentFile,
+                                )
+                        }</span>
+                }
+        }
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package database
+
+import (
+        "encoding/json"
+        "fmt"
+        "os"
+        "path/filepath"
+        "time"
+
+        "go.etcd.io/bbolt"
+)
+
+// SyncMode は同期モードを表す型
+type SyncMode string
+
+const (
+        // InitialSync は初期同期モード
+        InitialSync SyncMode = "initial"
+        // IncrementalSync は追加同期モード
+        IncrementalSync SyncMode = "incremental"
+        // NormalSync は通常の同期モード
+        NormalSync SyncMode = "normal"
+)
+
+// FileStatus はファイルの同期状態を表す型
+type FileStatus string
+
+const (
+        // StatusPending は同期待ちの状態
+        StatusPending FileStatus = "pending"
+        // StatusSuccess は同期成功の状態
+        StatusSuccess FileStatus = "success"
+        // StatusFailed は同期失敗の状態
+        StatusFailed FileStatus = "failed"
+        // StatusSkipped は同期スキップの状態
+        StatusSkipped FileStatus = "skipped"
+        // StatusVerified は検証済みの状態
+        StatusVerified FileStatus = "verified"
+        // StatusMismatch はハッシュ不一致の状態
+        StatusMismatch FileStatus = "mismatch"
+)
+
+// FileInfo はファイル情報を表す構造体
+type FileInfo struct {
+        Path         string     `json:"path"`           // ファイルパス（相対パス）
+        Size         int64      `json:"size"`           // ファイルサイズ
+        ModTime      time.Time  `json:"mod_time"`       // 最終更新時間
+        Status       FileStatus `json:"status"`         // 同期状態
+        SourceHash   string     `json:"source_hash"`    // ソースファイルのハッシュ
+        DestHash     string     `json:"dest_hash"`      // 宛先ファイルのハッシュ
+        FailCount    int        `json:"fail_count"`     // 失敗回数
+        LastSyncTime time.Time  `json:"last_sync_time"` // 最終同期時間
+        LastError    string     `json:"last_error"`     // 最後のエラーメッセージ
+}
+
+// SyncSession は同期セッション情報を表す構造体
+type SyncSession struct {
+        ID           int64     `json:"id"`
+        StartTime    time.Time `json:"start_time"`
+        EndTime      time.Time `json:"end_time"`
+        Mode         string    `json:"mode"`
+        FilesCopied  int       `json:"files_copied"`
+        FilesSkipped int       `json:"files_skipped"`
+        FilesFailed  int       `json:"files_failed"`
+        BytesCopied  int64     `json:"bytes_copied"`
+        Status       string    `json:"status"`
+}
+
+// SyncDB は同期状態データベースを管理する構造体
+type SyncDB struct {
+        db       *bbolt.DB
+        dbPath   string
+        syncMode SyncMode
+}
+
+// バケット名の定数
+var (
+        fileSyncBucket = []byte("file_sync")
+        sessionBucket  = []byte("sync_session")
+        statsBucket    = []byte("sync_stats")
+)
+
+// NewSyncDB は新しい同期データベースを作成する
+func NewSyncDB(dbPath string, mode SyncMode) (*SyncDB, error) <span class="cov8" title="1">{
+        // データベースディレクトリの作成
+        dbDir := filepath.Dir(dbPath)
+        if err := os.MkdirAll(dbDir, 0755); err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("データベースディレクトリの作成に失敗: %w", err)
+        }</span>
+
+        // BoltDBデータベースを開く
+        <span class="cov8" title="1">db, err := bbolt.Open(dbPath, 0600, &amp;bbolt.Options{Timeout: 1 * time.Second})
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("データベース接続エラー: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">syncDB := &amp;SyncDB{
+                db:       db,
+                dbPath:   dbPath,
+                syncMode: mode,
+        }
+
+        // バケットの初期化
+        if err := syncDB.initBuckets(); err != nil </span><span class="cov0" title="0">{
+                db.Close()
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">return syncDB, nil</span>
+}
+
+// Close はデータベース接続を閉じる
+func (s *SyncDB) Close() error <span class="cov8" title="1">{
+        return s.db.Close()
+}</span>
+
+// initBuckets はデータベースバケットを初期化する
+func (s *SyncDB) initBuckets() error <span class="cov8" title="1">{
+        return s.db.Update(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                // ファイル同期状態バケット
+                if _, err := tx.CreateBucketIfNotExists(fileSyncBucket); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケット作成エラー: %w", err)
+                }</span>
+
+                // 同期セッションバケット
+                <span class="cov8" title="1">if _, err := tx.CreateBucketIfNotExists(sessionBucket); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("セッションバケット作成エラー: %w", err)
+                }</span>
+
+                // 統計情報バケット
+                <span class="cov8" title="1">if _, err := tx.CreateBucketIfNotExists(statsBucket); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("統計バケット作成エラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">return nil</span>
+        })
+}
+
+// ResetDatabase はデータベースをリセットする（初期同期モード用）
+func (s *SyncDB) ResetDatabase() error <span class="cov8" title="1">{
+        if s.syncMode != InitialSync </span><span class="cov0" title="0">{
+                return fmt.Errorf("初期同期モードでのみデータベースをリセットできます")
+        }</span>
+
+        <span class="cov8" title="1">return s.db.Update(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                // ファイル同期バケットを削除して再作成
+                if err := tx.DeleteBucket(fileSyncBucket); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケット削除エラー: %w", err)
+                }</span>
+                <span class="cov8" title="1">if _, err := tx.CreateBucket(fileSyncBucket); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケット再作成エラー: %w", err)
+                }</span>
+
+                // 統計情報バケットをクリア
+                <span class="cov8" title="1">if err := tx.DeleteBucket(statsBucket); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("統計バケット削除エラー: %w", err)
+                }</span>
+                <span class="cov8" title="1">if _, err := tx.CreateBucket(statsBucket); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("統計バケット再作成エラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">return nil</span>
+        })
+}
+
+// AddFile はファイル情報をデータベースに追加する
+func (s *SyncDB) AddFile(file FileInfo) error <span class="cov8" title="1">{
+        return s.db.Update(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                bucket := tx.Bucket(fileSyncBucket)
+                if bucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケットが見つかりません")
+                }</span>
+
+                // ファイル情報をJSONにシリアライズ
+                <span class="cov8" title="1">data, err := json.Marshal(file)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報のシリアライズエラー: %w", err)
+                }</span>
+
+                // キーとしてファイルパスを使用
+                <span class="cov8" title="1">key := []byte(file.Path)
+                if err := bucket.Put(key, data); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報の保存エラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">return nil</span>
+        })
+}
+
+// GetFile はファイル情報をデータベースから取得する
+func (s *SyncDB) GetFile(path string) (*FileInfo, error) <span class="cov8" title="1">{
+        var fileInfo FileInfo
+
+        err := s.db.View(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                bucket := tx.Bucket(fileSyncBucket)
+                if bucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケットが見つかりません")
+                }</span>
+
+                <span class="cov8" title="1">key := []byte(path)
+                data := bucket.Get(key)
+                if data == nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("ファイルが見つかりません: %s", path)
+                }</span>
+
+                <span class="cov8" title="1">if err := json.Unmarshal(data, &amp;fileInfo); err != nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("ファイル情報のデシリアライズエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">return nil</span>
+        })
+
+        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">return &amp;fileInfo, nil</span>
+}
+
+// UpdateFileStatus はファイルの状態を更新する
+func (s *SyncDB) UpdateFileStatus(path string, status FileStatus, lastError string) error <span class="cov8" title="1">{
+        return s.db.Update(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                bucket := tx.Bucket(fileSyncBucket)
+                if bucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケットが見つかりません")
+                }</span>
+
+                <span class="cov8" title="1">key := []byte(path)
+                data := bucket.Get(key)
+                if data == nil </span><span class="cov8" title="1">{
+                        // ファイルが存在しない場合は新規作成
+                        fileInfo := FileInfo{
+                                Path:         path,
+                                Status:       status,
+                                LastError:    lastError,
+                                LastSyncTime: time.Now(),
+                        }
+
+                        // 現在のトランザクション内で直接保存
+                        newData, err := json.Marshal(fileInfo)
+                        if err != nil </span><span class="cov0" title="0">{
+                                return fmt.Errorf("ファイル情報のシリアライズエラー: %w", err)
+                        }</span>
+
+                        <span class="cov8" title="1">if err := bucket.Put(key, newData); err != nil </span><span class="cov0" title="0">{
+                                return fmt.Errorf("ファイル情報の保存エラー: %w", err)
+                        }</span>
+
+                        <span class="cov8" title="1">return nil</span>
+                }
+
+                // 既存のファイル情報を更新
+                <span class="cov8" title="1">var fileInfo FileInfo
+                if err := json.Unmarshal(data, &amp;fileInfo); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報のデシリアライズエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">fileInfo.Status = status
+                fileInfo.LastError = lastError
+                fileInfo.LastSyncTime = time.Now()
+
+                // 更新された情報を保存
+                newData, err := json.Marshal(fileInfo)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報のシリアライズエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">if err := bucket.Put(key, newData); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報の更新エラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">return nil</span>
+        })
+}
+
+// UpdateFileHash はファイルのハッシュ情報を更新する
+func (s *SyncDB) UpdateFileHash(path string, sourceHash, destHash string) error <span class="cov8" title="1">{
+        return s.db.Update(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                bucket := tx.Bucket(fileSyncBucket)
+                if bucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケットが見つかりません")
+                }</span>
+
+                <span class="cov8" title="1">key := []byte(path)
+                data := bucket.Get(key)
+                if data == nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("ファイルが見つかりません: %s", path)
+                }</span>
+
+                <span class="cov8" title="1">var fileInfo FileInfo
+                if err := json.Unmarshal(data, &amp;fileInfo); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報のデシリアライズエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">fileInfo.SourceHash = sourceHash
+                fileInfo.DestHash = destHash
+                fileInfo.LastSyncTime = time.Now()
+
+                newData, err := json.Marshal(fileInfo)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報のシリアライズエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">if err := bucket.Put(key, newData); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報の更新エラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">return nil</span>
+        })
+}
+
+// IncrementFailCount はファイルの失敗回数を増加させる
+func (s *SyncDB) IncrementFailCount(path string) (int, error) <span class="cov8" title="1">{
+        var failCount int
+
+        err := s.db.Update(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                bucket := tx.Bucket(fileSyncBucket)
+                if bucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケットが見つかりません")
+                }</span>
+
+                <span class="cov8" title="1">key := []byte(path)
+                data := bucket.Get(key)
+                if data == nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("ファイルが見つかりません: %s", path)
+                }</span>
+
+                <span class="cov8" title="1">var fileInfo FileInfo
+                if err := json.Unmarshal(data, &amp;fileInfo); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報のデシリアライズエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">fileInfo.FailCount++
+                failCount = fileInfo.FailCount
+                fileInfo.LastSyncTime = time.Now()
+
+                newData, err := json.Marshal(fileInfo)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報のシリアライズエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">if err := bucket.Put(key, newData); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル情報の更新エラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">return nil</span>
+        })
+
+        <span class="cov8" title="1">return failCount, err</span>
+}
+
+// GetFailedFiles は失敗したファイルのリストを取得する
+func (s *SyncDB) GetFailedFiles(maxFailCount int) ([]FileInfo, error) <span class="cov8" title="1">{
+        var failedFiles []FileInfo
+
+        err := s.db.View(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                bucket := tx.Bucket(fileSyncBucket)
+                if bucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケットが見つかりません")
+                }</span>
+
+                <span class="cov8" title="1">return bucket.ForEach(func(k, v []byte) error </span><span class="cov8" title="1">{
+                        var fileInfo FileInfo
+                        if err := json.Unmarshal(v, &amp;fileInfo); err != nil </span><span class="cov0" title="0">{
+                                return fmt.Errorf("ファイル情報のデシリアライズエラー: %w", err)
+                        }</span>
+
+                        // 失敗状態で、かつ最大失敗回数未満のファイルを追加
+                        <span class="cov8" title="1">if fileInfo.Status == StatusFailed &amp;&amp; (maxFailCount == 0 || fileInfo.FailCount &lt; maxFailCount) </span><span class="cov8" title="1">{
+                                failedFiles = append(failedFiles, fileInfo)
+                        }</span>
+
+                        <span class="cov8" title="1">return nil</span>
+                })
+        })
+
+        <span class="cov8" title="1">return failedFiles, err</span>
+}
+
+// GetFilesByStatus は指定された状態のファイルリストを取得する
+func (s *SyncDB) GetFilesByStatus(status FileStatus) ([]FileInfo, error) <span class="cov8" title="1">{
+        var files []FileInfo
+
+        err := s.db.View(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                bucket := tx.Bucket(fileSyncBucket)
+                if bucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケットが見つかりません")
+                }</span>
+
+                <span class="cov8" title="1">return bucket.ForEach(func(k, v []byte) error </span><span class="cov8" title="1">{
+                        var fileInfo FileInfo
+                        if err := json.Unmarshal(v, &amp;fileInfo); err != nil </span><span class="cov0" title="0">{
+                                return fmt.Errorf("ファイル情報のデシリアライズエラー: %w", err)
+                        }</span>
+
+                        <span class="cov8" title="1">if fileInfo.Status == status </span><span class="cov8" title="1">{
+                                files = append(files, fileInfo)
+                        }</span>
+
+                        <span class="cov8" title="1">return nil</span>
+                })
+        })
+
+        <span class="cov8" title="1">return files, err</span>
+}
+
+// GetAllFiles はすべてのファイル情報を取得する
+func (s *SyncDB) GetAllFiles() ([]FileInfo, error) <span class="cov8" title="1">{
+        var files []FileInfo
+
+        err := s.db.View(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                bucket := tx.Bucket(fileSyncBucket)
+                if bucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケットが見つかりません")
+                }</span>
+
+                <span class="cov8" title="1">return bucket.ForEach(func(k, v []byte) error </span><span class="cov8" title="1">{
+                        var fileInfo FileInfo
+                        if err := json.Unmarshal(v, &amp;fileInfo); err != nil </span><span class="cov0" title="0">{
+                                return fmt.Errorf("ファイル情報のデシリアライズエラー: %w", err)
+                        }</span>
+
+                        <span class="cov8" title="1">files = append(files, fileInfo)
+                        return nil</span>
+                })
+        })
+
+        <span class="cov8" title="1">return files, err</span>
+}
+
+// StartSyncSession は新しい同期セッションを開始する
+func (s *SyncDB) StartSyncSession() (int64, error) <span class="cov8" title="1">{
+        var sessionID int64
+
+        err := s.db.Update(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                bucket := tx.Bucket(sessionBucket)
+                if bucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("セッションバケットが見つかりません")
+                }</span>
+
+                // セッションIDを生成（現在のタイムスタンプを使用）
+                <span class="cov8" title="1">sessionID = time.Now().UnixNano()
+
+                session := SyncSession{
+                        ID:        sessionID,
+                        StartTime: time.Now(),
+                        Mode:      string(s.syncMode),
+                        Status:    "running",
+                }
+
+                data, err := json.Marshal(session)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("セッション情報のシリアライズエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">key := []byte(fmt.Sprintf("%d", sessionID))
+                if err := bucket.Put(key, data); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("セッション情報の保存エラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">return nil</span>
+        })
+
+        <span class="cov8" title="1">return sessionID, err</span>
+}
+
+// EndSyncSession は同期セッションを終了する
+func (s *SyncDB) EndSyncSession(sessionID int64, filesCopied, filesSkipped, filesFailed int, bytesCopied int64) error <span class="cov8" title="1">{
+        return s.db.Update(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                bucket := tx.Bucket(sessionBucket)
+                if bucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("セッションバケットが見つかりません")
+                }</span>
+
+                <span class="cov8" title="1">key := []byte(fmt.Sprintf("%d", sessionID))
+                data := bucket.Get(key)
+                if data == nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("セッションが見つかりません: %d", sessionID)
+                }</span>
+
+                <span class="cov8" title="1">var session SyncSession
+                if err := json.Unmarshal(data, &amp;session); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("セッション情報のデシリアライズエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">session.EndTime = time.Now()
+                session.FilesCopied = filesCopied
+                session.FilesSkipped = filesSkipped
+                session.FilesFailed = filesFailed
+                session.BytesCopied = bytesCopied
+                session.Status = "completed"
+
+                newData, err := json.Marshal(session)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("セッション情報のシリアライズエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">if err := bucket.Put(key, newData); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("セッション情報の更新エラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">return nil</span>
+        })
+}
+
+// GetSyncStats は同期統計情報を取得する
+func (s *SyncDB) GetSyncStats() (map[string]int, error) <span class="cov8" title="1">{
+        stats := make(map[string]int)
+
+        err := s.db.View(func(tx *bbolt.Tx) error </span><span class="cov8" title="1">{
+                // ファイル同期バケットから統計を取得
+                fileBucket := tx.Bucket(fileSyncBucket)
+                if fileBucket == nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ファイル同期バケットが見つかりません")
+                }</span>
+
+                <span class="cov8" title="1">var totalFiles, successFiles, failedFiles, skippedFiles, pendingFiles int
+
+                err := fileBucket.ForEach(func(k, v []byte) error </span><span class="cov8" title="1">{
+                        var fileInfo FileInfo
+                        if err := json.Unmarshal(v, &amp;fileInfo); err != nil </span><span class="cov0" title="0">{
+                                return fmt.Errorf("ファイル情報のデシリアライズエラー: %w", err)
+                        }</span>
+
+                        <span class="cov8" title="1">totalFiles++
+                        switch fileInfo.Status </span>{
+                        case StatusSuccess:<span class="cov8" title="1">
+                                successFiles++</span>
+                        case StatusFailed:<span class="cov0" title="0">
+                                failedFiles++</span>
+                        case StatusSkipped:<span class="cov0" title="0">
+                                skippedFiles++</span>
+                        case StatusPending:<span class="cov0" title="0">
+                                pendingFiles++</span>
+                        }
+
+                        <span class="cov8" title="1">return nil</span>
+                })
+
+                <span class="cov8" title="1">if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+
+                <span class="cov8" title="1">stats["total_files"] = totalFiles
+                stats["success_files"] = successFiles
+                stats["failed_files"] = failedFiles
+                stats["skipped_files"] = skippedFiles
+                stats["pending_files"] = pendingFiles
+
+                return nil</span>
+        })
+
+        <span class="cov8" title="1">return stats, err</span>
+}
+
+// ExportVerificationReport は検証レポートをエクスポートする
+func (s *SyncDB) ExportVerificationReport(reportPath string) error <span class="cov8" title="1">{
+        files, err := s.GetAllFiles()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("ファイル情報の取得エラー: %w", err)
+        }</span>
+
+        // レポートデータを構造化
+        <span class="cov8" title="1">report := struct {
+                ExportTime time.Time  `json:"export_time"`
+                TotalFiles int        `json:"total_files"`
+                Files      []FileInfo `json:"files"`
+        }{
+                ExportTime: time.Now(),
+                TotalFiles: len(files),
+                Files:      files,
+        }
+
+        // JSONファイルとして保存
+        data, err := json.MarshalIndent(report, "", "  ")
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("レポートのシリアライズエラー: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">if err := os.WriteFile(reportPath, data, 0644); err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("レポートファイルの保存エラー: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package filter
+
+import (
+        "path/filepath"
+        "strings"
+)
+
+// Filter はファイルフィルタリングを行う構造体
+type Filter struct {
+        includePatterns []string
+        excludePatterns []string
+}
+
+// NewFilter は新しいフィルタを作成する
+func NewFilter(includePattern, excludePattern string) *Filter <span class="cov8" title="1">{
+        var includePatterns []string
+        var excludePatterns []string
+
+        // 含めるパターンの解析
+        if includePattern != "" </span><span class="cov8" title="1">{
+                includePatterns = strings.Split(includePattern, ",")
+                for i, p := range includePatterns </span><span class="cov8" title="1">{
+                        includePatterns[i] = strings.TrimSpace(p)
+                }</span>
+        }
+
+        // 除外パターンの解析
+        <span class="cov8" title="1">if excludePattern != "" </span><span class="cov8" title="1">{
+                excludePatterns = strings.Split(excludePattern, ",")
+                for i, p := range excludePatterns </span><span class="cov8" title="1">{
+                        excludePatterns[i] = strings.TrimSpace(p)
+                }</span>
+        }
+
+        <span class="cov8" title="1">return &amp;Filter{
+                includePatterns: includePatterns,
+                excludePatterns: excludePatterns,
+        }</span>
+}
+
+// ShouldInclude はファイルを含めるべきかどうかを判断する
+func (f *Filter) ShouldInclude(path string) bool <span class="cov8" title="1">{
+        // 除外パターンのチェック
+        for _, pattern := range f.excludePatterns </span><span class="cov8" title="1">{
+                matched, err := filepath.Match(pattern, filepath.Base(path))
+                if err == nil &amp;&amp; matched </span><span class="cov8" title="1">{
+                        return false
+                }</span>
+        }
+
+        // 含めるパターンが指定されていない場合は全て含める
+        <span class="cov8" title="1">if len(f.includePatterns) == 0 </span><span class="cov8" title="1">{
+                return true
+        }</span>
+
+        // 含めるパターンのチェック
+        <span class="cov8" title="1">for _, pattern := range f.includePatterns </span><span class="cov8" title="1">{
+                matched, err := filepath.Match(pattern, filepath.Base(path))
+                if err == nil &amp;&amp; matched </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+        }
+
+        <span class="cov8" title="1">return false</span>
+}
+
+// IsExcluded はファイルが除外パターンに一致するかどうかを判断する
+func (f *Filter) IsExcluded(path string) bool <span class="cov8" title="1">{
+        // 除外パターンのチェック
+        for _, pattern := range f.excludePatterns </span><span class="cov8" title="1">{
+                matched, err := filepath.Match(pattern, filepath.Base(path))
+                if err == nil &amp;&amp; matched </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+// IsIncluded はファイルが含めるパターンに一致するかどうかを判断する
+func (f *Filter) IsIncluded(path string) bool <span class="cov8" title="1">{
+        // 含めるパターンが指定されていない場合は全て含める
+        if len(f.includePatterns) == 0 </span><span class="cov8" title="1">{
+                return true
+        }</span>
+
+        // 含めるパターンのチェック
+        <span class="cov8" title="1">for _, pattern := range f.includePatterns </span><span class="cov8" title="1">{
+                matched, err := filepath.Match(pattern, filepath.Base(path))
+                if err == nil &amp;&amp; matched </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+// GetIncludePatterns は含めるパターンのリストを取得する
+func (f *Filter) GetIncludePatterns() []string <span class="cov8" title="1">{
+        return f.includePatterns
+}</span>
+
+// GetExcludePatterns は除外パターンのリストを取得する
+func (f *Filter) GetExcludePatterns() []string <span class="cov8" title="1">{
+        return f.excludePatterns
+}</span>
+
+// HasPatterns はフィルタにパターンが設定されているかどうかを判断する
+func (f *Filter) HasPatterns() bool <span class="cov8" title="1">{
+        return len(f.includePatterns) &gt; 0 || len(f.excludePatterns) &gt; 0
+}</span>
+
+// MatchesPath はパスがパターンに一致するかどうかを判断する
+// パターンはカンマ区切りの複数のパターンを含む文字列
+func MatchesPath(path, patterns string) bool <span class="cov8" title="1">{
+        if patterns == "" </span><span class="cov8" title="1">{
+                return false
+        }</span>
+
+        <span class="cov8" title="1">patternList := strings.Split(patterns, ",")
+        for _, pattern := range patternList </span><span class="cov8" title="1">{
+                pattern = strings.TrimSpace(pattern)
+                matched, err := filepath.Match(pattern, filepath.Base(path))
+                if err == nil &amp;&amp; matched </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+        }
+
+        <span class="cov8" title="1">return false</span>
+}
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package hasher
+
+import (
+        "crypto/md5"
+        "crypto/sha1"
+        "crypto/sha256"
+        "encoding/hex"
+        "fmt"
+        "hash"
+        "io"
+        "os"
+        "path/filepath"
+)
+
+// Algorithm はハッシュアルゴリズムの種類を表す型
+type Algorithm string
+
+const (
+        // MD5 はMD5ハッシュアルゴリズム
+        MD5 Algorithm = "md5"
+        // SHA1 はSHA-1ハッシュアルゴリズム
+        SHA1 Algorithm = "sha1"
+        // SHA256 はSHA-256ハッシュアルゴリズム
+        SHA256 Algorithm = "sha256"
+)
+
+// Hasher はファイルハッシュ計算を行う構造体
+type Hasher struct {
+        algorithm  Algorithm
+        bufferSize int
+}
+
+// NewHasher は新しいハッシャーを作成する
+func NewHasher(algorithm Algorithm, bufferSize int) *Hasher <span class="cov8" title="1">{
+        // バッファサイズが0以下の場合はデフォルト値を使用
+        if bufferSize &lt;= 0 </span><span class="cov8" title="1">{
+                bufferSize = 32 * 1024 * 1024 // 32MB
+        }</span>
+
+        <span class="cov8" title="1">return &amp;Hasher{
+                algorithm:  algorithm,
+                bufferSize: bufferSize,
+        }</span>
+}
+
+// getHasher は指定されたアルゴリズムのハッシャーを返す
+func (h *Hasher) getHasher() (hash.Hash, error) <span class="cov8" title="1">{
+        switch h.algorithm </span>{
+        case MD5:<span class="cov8" title="1">
+                return md5.New(), nil</span>
+        case SHA1:<span class="cov8" title="1">
+                return sha1.New(), nil</span>
+        case SHA256:<span class="cov8" title="1">
+                return sha256.New(), nil</span>
+        default:<span class="cov8" title="1">
+                return nil, fmt.Errorf("未サポートのハッシュアルゴリズム: %s", h.algorithm)</span>
+        }
+}
+
+// HashFile はファイルのハッシュ値を計算する
+func (h *Hasher) HashFile(filePath string) (string, error) <span class="cov8" title="1">{
+        // ファイルを開く
+        file, err := os.Open(filePath)
+        if err != nil </span><span class="cov8" title="1">{
+                return "", fmt.Errorf("ファイルを開けません: %w", err)
+        }</span>
+        <span class="cov8" title="1">defer file.Close()
+
+        // ハッシャーを取得
+        hasher, err := h.getHasher()
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+
+        // バッファを作成
+        <span class="cov8" title="1">buffer := make([]byte, h.bufferSize)
+
+        // ファイルを読み込んでハッシュを計算
+        for </span><span class="cov8" title="1">{
+                n, err := file.Read(buffer)
+                if err != nil &amp;&amp; err != io.EOF </span><span class="cov8" title="1">{
+                        return "", fmt.Errorf("ファイル読み込みエラー: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">if n == 0 </span><span class="cov8" title="1">{
+                        break</span>
+                }
+
+                <span class="cov8" title="1">hasher.Write(buffer[:n])</span>
+        }
+
+        // ハッシュ値を16進数文字列に変換
+        <span class="cov8" title="1">hashSum := hasher.Sum(nil)
+        hashString := hex.EncodeToString(hashSum)
+
+        return hashString, nil</span>
+}
+
+// VerifyFileHash はファイルのハッシュ値が期待値と一致するかを検証する
+func (h *Hasher) VerifyFileHash(filePath, expectedHash string) (bool, error) <span class="cov8" title="1">{
+        actualHash, err := h.HashFile(filePath)
+        if err != nil </span><span class="cov8" title="1">{
+                return false, err
+        }</span>
+
+        <span class="cov8" title="1">return actualHash == expectedHash, nil</span>
+}
+
+// HashDirectory はディレクトリ内の全ファイルのハッシュを計算する
+// 戻り値はファイルパス（ベースディレクトリからの相対パス）をキー、ハッシュ値を値とするマップ
+func (h *Hasher) HashDirectory(dirPath string, recursive bool) (map[string]string, error) <span class="cov8" title="1">{
+        // 追加: ディレクトリかどうかチェック
+        info, err := os.Stat(dirPath)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("パスの確認に失敗: %w", err)
+        }</span>
+        <span class="cov8" title="1">if !info.IsDir() </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("指定されたパスはディレクトリではありません: %s", dirPath)
+        }</span>
+
+        <span class="cov8" title="1">results := make(map[string]string)
+
+        err = filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error </span><span class="cov8" title="1">{
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+
+                // ディレクトリはスキップ
+                <span class="cov8" title="1">if info.IsDir() </span><span class="cov8" title="1">{
+                        // 再帰的でない場合は、トップレベルディレクトリのみ処理
+                        if !recursive &amp;&amp; path != dirPath </span><span class="cov8" title="1">{
+                                return filepath.SkipDir
+                        }</span>
+                        <span class="cov8" title="1">return nil</span>
+                }
+
+                // ファイルのハッシュを計算
+                <span class="cov8" title="1">hash, err := h.HashFile(path)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("ハッシュ計算エラー (%s): %w", path, err)
+                }</span>
+
+                // 相対パスを計算
+                <span class="cov8" title="1">relPath, err := filepath.Rel(dirPath, path)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("相対パス計算エラー: %w", err)
+                }</span>
+
+                // 結果に追加
+                <span class="cov8" title="1">results[relPath] = hash
+
+                return nil</span>
+        })
+
+        <span class="cov8" title="1">if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("ディレクトリ走査エラー: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return results, nil</span>
+}
+
+// CompareDirectories は2つのディレクトリのファイルハッシュを比較する
+// 戻り値は不一致ファイルのリスト、エラー
+func (h *Hasher) CompareDirectories(sourceDir, destDir string, recursive bool) ([]string, error) <span class="cov8" title="1">{
+        // 追加: ディレクトリかどうかチェック
+        info1, err := os.Stat(sourceDir)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("ソースパスの確認に失敗: %w", err)
+        }</span>
+        <span class="cov8" title="1">if !info1.IsDir() </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("ソースパスはディレクトリではありません: %s", sourceDir)
+        }</span>
+        <span class="cov8" title="1">info2, err := os.Stat(destDir)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("宛先パスの確認に失敗: %w", err)
+        }</span>
+        <span class="cov8" title="1">if !info2.IsDir() </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("宛先パスはディレクトリではありません: %s", destDir)
+        }</span>
+
+        // ソースディレクトリのハッシュを計算
+        <span class="cov8" title="1">sourceHashes, err := h.HashDirectory(sourceDir, recursive)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("ソースディレクトリのハッシュ計算エラー: %w", err)
+        }</span>
+
+        // 宛先ディレクトリのハッシュを計算
+        <span class="cov8" title="1">destHashes, err := h.HashDirectory(destDir, recursive)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("宛先ディレクトリのハッシュ計算エラー: %w", err)
+        }</span>
+
+        // 不一致ファイルのリスト
+        <span class="cov8" title="1">var mismatchedFiles []string
+
+        // ソースファイルを確認
+        for relPath, sourceHash := range sourceHashes </span><span class="cov8" title="1">{
+                destHash, exists := destHashes[relPath]
+
+                // 宛先に存在しない場合
+                if !exists </span><span class="cov8" title="1">{
+                        mismatchedFiles = append(mismatchedFiles, relPath+" (宛先に存在しません)")
+                        continue</span>
+                }
+
+                // ハッシュが一致しない場合
+                <span class="cov8" title="1">if sourceHash != destHash </span><span class="cov8" title="1">{
+                        mismatchedFiles = append(mismatchedFiles, relPath+" (ハッシュ不一致)")
+                }</span>
+        }
+
+        // 宛先にのみ存在するファイルを確認
+        <span class="cov8" title="1">for relPath := range destHashes </span><span class="cov8" title="1">{
+                _, exists := sourceHashes[relPath]
+                if !exists </span><span class="cov8" title="1">{
+                        mismatchedFiles = append(mismatchedFiles, relPath+" (ソースに存在しません)")
+                }</span>
+        }
+
+        <span class="cov8" title="1">return mismatchedFiles, nil</span>
+}
+
+// GetAlgorithmName はハッシュアルゴリズムの名前を返す
+func (h *Hasher) GetAlgorithmName() string <span class="cov8" title="1">{
+        return string(h.algorithm)
+}</span>
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package logger
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+        "sync"
+        "time"
+
+        "go.uber.org/zap"
+        "go.uber.org/zap/zapcore"
+)
+
+// Logger はzapロガーをラップする構造体
+type Logger struct {
+        zap        *zap.Logger
+        sugar      *zap.SugaredLogger
+        Verbose    bool
+        NoProgress bool
+        mu         sync.Mutex
+        lastLine   string
+}
+
+// NewLogger は新しいロガーを作成する
+func NewLogger(logFile string, verbose bool, showProgress bool) *Logger <span class="cov8" title="1">{
+        // ログレベルの設定
+        level := zapcore.InfoLevel
+        if verbose </span><span class="cov8" title="1">{
+                level = zapcore.DebugLevel
+        }</span>
+
+        // エンコーダーの設定
+        <span class="cov8" title="1">encoderConfig := zapcore.EncoderConfig{
+                TimeKey:        "time",
+                LevelKey:       "level",
+                NameKey:        "logger",
+                CallerKey:      "caller",
+                FunctionKey:    zapcore.OmitKey,
+                MessageKey:     "msg",
+                StacktraceKey:  "stacktrace",
+                LineEnding:     zapcore.DefaultLineEnding,
+                EncodeLevel:    zapcore.CapitalLevelEncoder,
+                EncodeTime:     zapcore.ISO8601TimeEncoder,
+                EncodeDuration: zapcore.StringDurationEncoder,
+                EncodeCaller:   zapcore.ShortCallerEncoder,
+        }
+
+        // 出力先の設定
+        var cores []zapcore.Core
+
+        // コンソール出力
+        consoleEncoder := zapcore.NewConsoleEncoder(encoderConfig)
+        consoleCore := zapcore.NewCore(
+                consoleEncoder,
+                zapcore.Lock(os.Stdout),
+                level,
+        )
+        cores = append(cores, consoleCore)
+
+        // ファイル出力（指定されている場合）
+        if logFile != "" </span><span class="cov8" title="1">{
+                // ディレクトリの作成
+                logDir := filepath.Dir(logFile)
+                if err := os.MkdirAll(logDir, 0755); err != nil </span><span class="cov0" title="0">{
+                        fmt.Fprintf(os.Stderr, "ログディレクトリの作成に失敗: %v\n", err)
+                }</span> else<span class="cov8" title="1"> {
+                        // ファイルオープン
+                        file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+                        if err != nil </span><span class="cov0" title="0">{
+                                fmt.Fprintf(os.Stderr, "ログファイルのオープンに失敗: %v\n", err)
+                        }</span> else<span class="cov8" title="1"> {
+                                fileEncoder := zapcore.NewJSONEncoder(encoderConfig)
+                                fileCore := zapcore.NewCore(
+                                        fileEncoder,
+                                        zapcore.AddSync(file),
+                                        level,
+                                )
+                                cores = append(cores, fileCore)
+                        }</span>
+                }
+        }
+
+        // コアの結合
+        <span class="cov8" title="1">core := zapcore.NewTee(cores...)
+
+        // ロガーの作成
+        zapLogger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+
+        return &amp;Logger{
+                zap:        zapLogger,
+                sugar:      zapLogger.Sugar(),
+                Verbose:    verbose,
+                NoProgress: !showProgress,
+        }</span>
+}
+
+// Close はロガーを閉じる
+func (l *Logger) Close() <span class="cov8" title="1">{
+        _ = l.zap.Sync()
+}</span>
+
+// Debug はデバッグレベルのログを出力する
+func (l *Logger) Debug(format string, args ...interface{}) <span class="cov8" title="1">{
+        l.mu.Lock()
+        defer l.mu.Unlock()
+
+        // 進捗表示を消去
+        l.clearProgress()
+
+        // ログ出力
+        l.sugar.Debugf(format, args...)
+}</span>
+
+// Info は情報レベルのログを出力する
+func (l *Logger) Info(format string, args ...interface{}) <span class="cov8" title="1">{
+        l.mu.Lock()
+        defer l.mu.Unlock()
+
+        // 進捗表示を消去
+        l.clearProgress()
+
+        // ログ出力
+        l.sugar.Infof(format, args...)
+}</span>
+
+// Warn は警告レベルのログを出力する
+func (l *Logger) Warn(format string, args ...interface{}) <span class="cov8" title="1">{
+        l.mu.Lock()
+        defer l.mu.Unlock()
+
+        // 進捗表示を消去
+        l.clearProgress()
+
+        // ログ出力
+        l.sugar.Warnf(format, args...)
+}</span>
+
+// Error はエラーレベルのログを出力する
+func (l *Logger) Error(format string, args ...interface{}) <span class="cov8" title="1">{
+        l.mu.Lock()
+        defer l.mu.Unlock()
+
+        // 進捗表示を消去
+        l.clearProgress()
+
+        // ログ出力
+        l.sugar.Errorf(format, args...)
+}</span>
+
+// Fatal は致命的エラーレベルのログを出力する
+func (l *Logger) Fatal(format string, args ...interface{}) <span class="cov0" title="0">{
+        l.mu.Lock()
+        defer l.mu.Unlock()
+
+        // 進捗表示を消去
+        l.clearProgress()
+
+        // ログ出力
+        l.sugar.Fatalf(format, args...)
+}</span>
+
+// Progress は進捗情報を出力する（上書き可能）
+func (l *Logger) Progress(format string, args ...interface{}) <span class="cov8" title="1">{
+        if l.NoProgress </span><span class="cov8" title="1">{
+                return
+        }</span>
+
+        <span class="cov8" title="1">l.mu.Lock()
+        defer l.mu.Unlock()
+
+        // 現在の時刻を追加
+        now := time.Now().Format("15:04:05")
+        message := fmt.Sprintf("[%s] %s", now, fmt.Sprintf(format, args...))
+
+        // 前の行を消去して新しい進捗を表示
+        fmt.Print("\r\033[K") // カーソルを行頭に移動して行をクリア
+        fmt.Print(message)
+
+        l.lastLine = message</span>
+}
+
+// clearProgress は進捗表示を消去する
+func (l *Logger) clearProgress() <span class="cov8" title="1">{
+        if l.NoProgress || l.lastLine == "" </span><span class="cov8" title="1">{
+                return
+        }</span>
+
+        <span class="cov8" title="1">fmt.Print("\r\033[K") // カーソルを行頭に移動して行をクリア
+        l.lastLine = ""</span>
+}
+
+// WithFields は構造化ログ用のフィールドを追加する
+func (l *Logger) WithFields(fields map[string]interface{}) *zap.SugaredLogger <span class="cov8" title="1">{
+        zapFields := make([]interface{}, 0, len(fields)*2)
+        for k, v := range fields </span><span class="cov8" title="1">{
+                zapFields = append(zapFields, k, v)
+        }</span>
+        <span class="cov8" title="1">return l.sugar.With(zapFields...)</span>
+}
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">package stats
+
+import (
+        "fmt"
+        "sync"
+        "sync/atomic"
+)
+
+// Stats は同期処理の統計情報を管理する構造体
+type Stats struct {
+        FilesCopied  int64 // コピーしたファイル数
+        FilesSkipped int64 // スキップしたファイル数
+        FilesFailed  int64 // 失敗したファイル数
+        BytesCopied  int64 // コピーしたバイト数
+        BytesSkipped int64 // スキップしたバイト数
+        mu           sync.Mutex
+}
+
+// NewStats は新しい統計情報オブジェクトを作成する
+func NewStats() *Stats <span class="cov8" title="1">{
+        return &amp;Stats{}
+}</span>
+
+// IncrementCopied はコピーしたファイル数とバイト数を増加させる
+func (s *Stats) IncrementCopied(bytes int64) <span class="cov8" title="1">{
+        atomic.AddInt64(&amp;s.FilesCopied, 1)
+        atomic.AddInt64(&amp;s.BytesCopied, bytes)
+}</span>
+
+// IncrementSkipped はスキップしたファイル数とバイト数を増加させる
+func (s *Stats) IncrementSkipped(bytes int64) <span class="cov8" title="1">{
+        atomic.AddInt64(&amp;s.FilesSkipped, 1)
+        atomic.AddInt64(&amp;s.BytesSkipped, bytes)
+}</span>
+
+// IncrementFailed は失敗したファイル数を増加させる
+func (s *Stats) IncrementFailed() <span class="cov8" title="1">{
+        atomic.AddInt64(&amp;s.FilesFailed, 1)
+}</span>
+
+// GetCopiedCount はコピーしたファイル数を取得する
+func (s *Stats) GetCopiedCount() int64 <span class="cov8" title="1">{
+        return atomic.LoadInt64(&amp;s.FilesCopied)
+}</span>
+
+// GetSkippedCount はスキップしたファイル数を取得する
+func (s *Stats) GetSkippedCount() int64 <span class="cov8" title="1">{
+        return atomic.LoadInt64(&amp;s.FilesSkipped)
+}</span>
+
+// GetFailedCount は失敗したファイル数を取得する
+func (s *Stats) GetFailedCount() int64 <span class="cov8" title="1">{
+        return atomic.LoadInt64(&amp;s.FilesFailed)
+}</span>
+
+// GetCopiedBytes はコピーしたバイト数を取得する
+func (s *Stats) GetCopiedBytes() int64 <span class="cov8" title="1">{
+        return atomic.LoadInt64(&amp;s.BytesCopied)
+}</span>
+
+// GetSkippedBytes はスキップしたバイト数を取得する
+func (s *Stats) GetSkippedBytes() int64 <span class="cov8" title="1">{
+        return atomic.LoadInt64(&amp;s.BytesSkipped)
+}</span>
+
+// GetTotalFiles は処理したファイルの合計数を取得する
+func (s *Stats) GetTotalFiles() int64 <span class="cov8" title="1">{
+        return s.GetCopiedCount() + s.GetSkippedCount() + s.GetFailedCount()
+}</span>
+
+// GetTotalBytes は処理したバイトの合計数を取得する
+func (s *Stats) GetTotalBytes() int64 <span class="cov8" title="1">{
+        return s.GetCopiedBytes() + s.GetSkippedBytes()
+}</span>
+
+// String はStats構造体の文字列表現を返す
+func (s *Stats) String() string <span class="cov8" title="1">{
+        return fmt.Sprintf(
+                "コピー: %d ファイル (%s), スキップ: %d ファイル (%s), 失敗: %d ファイル",
+                s.GetCopiedCount(), formatBytes(s.GetCopiedBytes()),
+                s.GetSkippedCount(), formatBytes(s.GetSkippedBytes()),
+                s.GetFailedCount(),
+        )
+}</span>
+
+// GetProgressStats は進捗表示用の統計情報を取得する
+func (s *Stats) GetProgressStats() (int64, int64, float64) <span class="cov8" title="1">{
+        totalFiles := s.GetTotalFiles()
+        totalBytes := s.GetTotalBytes()
+
+        var progressPercent float64
+        if totalFiles &gt; 0 </span><span class="cov8" title="1">{
+                progressPercent = float64(s.GetCopiedCount()+s.GetSkippedCount()) / float64(totalFiles) * 100
+        }</span>
+
+        <span class="cov8" title="1">return totalFiles, totalBytes, progressPercent</span>
+}
+
+// Reset は統計情報をリセットする
+func (s *Stats) Reset() <span class="cov8" title="1">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+
+        atomic.StoreInt64(&amp;s.FilesCopied, 0)
+        atomic.StoreInt64(&amp;s.FilesSkipped, 0)
+        atomic.StoreInt64(&amp;s.FilesFailed, 0)
+        atomic.StoreInt64(&amp;s.BytesCopied, 0)
+        atomic.StoreInt64(&amp;s.BytesSkipped, 0)
+}</span>
+
+// formatBytes はバイト数を読みやすい形式にフォーマットする
+func formatBytes(bytes int64) string <span class="cov8" title="1">{
+        const unit = 1024
+        if bytes &lt; unit </span><span class="cov8" title="1">{
+                return fmt.Sprintf("%d B", bytes)
+        }</span>
+        <span class="cov8" title="1">div, exp := int64(unit), 0
+        for n := bytes / unit; n &gt;= unit; n /= unit </span><span class="cov0" title="0">{
+                div *= unit
+                exp++
+        }</span>
+        <span class="cov8" title="1">return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])</span>
+}
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">package verifier
 
 import (
         "context"
@@ -226,8 +3727,15 @@ func (v *Verifier) addResult(result VerificationResult) <span class="cov8" title
 
 // Verify はファイルの検証を行う
 func (v *Verifier) Verify() error <span class="cov8" title="1">{
+        // コンテキストのキャンセル確認
+        select </span>{
+        case &lt;-v.ctx.Done():<span class="cov8" title="1">
+                return fmt.Errorf("検証処理がキャンセルされました")</span>
+        default:<span class="cov8" title="1"></span>
+        }
+
         // 同期セッションの開始
-        var sessionID int64
+        <span class="cov8" title="1">var sessionID int64
         var err error
         if v.db != nil </span><span class="cov8" title="1">{
                 sessionID, err = v.db.StartSyncSession()
@@ -300,7 +3808,7 @@ func (v *Verifier) Verify() error <span class="cov8" title="1">{
 func (v *Verifier) verifyDirectory(sourceDir, destDir string) error <span class="cov8" title="1">{
         // コンテキストのキャンセル確認
         select </span>{
-        case &lt;-v.ctx.Done():<span class="cov8" title="1">
+        case &lt;-v.ctx.Done():<span class="cov0" title="0">
                 return fmt.Errorf("検証処理がキャンセルされました")</span>
         default:<span class="cov8" title="1"></span>
         }
