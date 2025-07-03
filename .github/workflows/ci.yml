@@ -22,17 +22,16 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      # キャッシュは一時的に無効化（エラー回避のため）
-      # - name: Cache Go modules
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: |
-      #       ~/.cache/go-build
-      #       ~/go/pkg/mod
-      #     key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-      #       ${{ runner.os }}-go-
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+            ${{ runner.os }}-go-
 
       - name: Install dependencies
         run: go mod download
@@ -52,10 +51,6 @@ jobs:
           fail_ci_if_error: false
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
-          directory: ./
-          coverage_report: ./coverage.out
-          search_path: ./
-          dry_run: false
 
   test-windows:
     runs-on: windows-latest
@@ -65,18 +60,54 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go-version }}
+      
+      - name: Install dependencies
+        run: go mod download
+      
+      - name: Verify Go installation
+        run: |
+          go version
+          go env GOPATH
+          go env GOROOT
+      
       - name: Build
         run: pwsh -NonInteractive -NoProfile -Command "& { .\build.ps1 build }"
+        timeout-minutes: 5
+      
+      - name: Verify build output
+        run: |
+          if (Test-Path "gopier.exe") {
+            Write-Host "✓ Build successful: gopier.exe exists"
+            .\gopier.exe --help
+          } else {
+            Write-Host "✗ Build failed: gopier.exe not found"
+            exit 1
+          }
+      
       - name: Test
         run: pwsh -Command ".\build.ps1 test"
         timeout-minutes: 10
+      
       - name: Coverage
         run: pwsh -Command ".\build.ps1 test-coverage"
         timeout-minutes: 10
+      
+      - name: Verify coverage file
+        run: |
+          if (Test-Path "coverage.out") {
+            Write-Host "✓ Coverage file generated: coverage.out"
+            $size = (Get-Item "coverage.out").Length
+            Write-Host "Coverage file size: $size bytes"
+          } else {
+            Write-Host "✗ Coverage file not found"
+            exit 1
+          }
+      
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
@@ -86,10 +117,6 @@ jobs:
           fail_ci_if_error: false
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
-          directory: ./
-          coverage_report: ./coverage.out
-          search_path: ./
-          dry_run: false
 
   build:
     runs-on: ubuntu-latest
@@ -104,17 +131,16 @@ jobs:
         with:
           go-version: '1.21'
 
-      # キャッシュは一時的に無効化（エラー回避のため）
-      # - name: Cache Go modules
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: |
-      #       ~/.cache/go-build
-      #       ~/go/pkg/mod
-      #     key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-      #       ${{ runner.os }}-go-
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+            ${{ runner.os }}-go-
 
       - name: Build
         run: make build
