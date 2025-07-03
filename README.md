@@ -3,8 +3,10 @@
 [![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](https://github.com/sakuhanight/gopier)
+[![CI](https://github.com/sakuhanight/gopier/workflows/CI/badge.svg)](https://github.com/sakuhanight/gopier/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/sakuhanight/gopier)](https://goreportcard.com/report/github.com/sakuhanight/gopier)
-[![codecov](https://codecov.io/gh/sakuhanight/gopier/branch/main/graph/badge.svg)](https://codecov.io/gh/sakuhanight/gopier)
+[![codecov](https://codecov.io/gh/sakuhanight/gopier/graph/badge.svg?token=5M745GA7T3)](https://codecov.io/gh/sakuhanight/gopier)
+[![Coverage](https://img.shields.io/badge/coverage-77.9%25-brightgreen.svg)](https://github.com/sakuhanight/gopier)
 
 高性能・多機能なファイル同期CLIツール
 
