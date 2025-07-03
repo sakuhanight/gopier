@@ -197,6 +197,7 @@ function Test-Project {
     }
     
     try {
+        $env:TESTING = "1"
         Write-Host "TESTING環境変数: $env:TESTING"
         Write-ColorOutput "通常テスト実行中..." "Yellow"
         go test -v ./...
@@ -208,6 +209,7 @@ function Test-Project {
         }
         
         Write-ColorOutput "統合テスト実行中..." "Yellow"
+        $env:TESTING = "1"
         go test -v ./tests/...
         if ($LASTEXITCODE -eq 0) {
             Write-ColorOutput "統合テスト成功" "Green"
@@ -235,6 +237,7 @@ function Test-Coverage {
     
     try {
         Write-ColorOutput "通常テストカバレッジ実行中..." "Yellow"
+        $env:TESTING = "1"
         go test -v -coverprofile=coverage.out ./...
         if ($LASTEXITCODE -eq 0) {
             Write-ColorOutput "通常テストカバレッジ成功" "Green"
@@ -244,6 +247,7 @@ function Test-Coverage {
         }
         
         Write-ColorOutput "統合テストカバレッジ実行中..." "Yellow"
+        $env:TESTING = "1"
         go test -v -coverprofile=coverage-integration.out ./tests/...
         if ($LASTEXITCODE -eq 0) {
             Write-ColorOutput "統合テストカバレッジ成功" "Green"
