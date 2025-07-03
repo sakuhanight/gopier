@@ -906,25 +906,20 @@ func BenchmarkCopyFiles_Parallel(b *testing.B) {
 	options := DefaultOptions()
 	options.MaxConcurrent = 8
 	options.ProgressInterval = time.Hour // 進捗表示を無効化
-	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		// 各ベンチマーク実行で新しいcopierを作成
 		destDirPath := filepath.Join(destDir, fmt.Sprintf("dest_%d", i))
 		os.MkdirAll(destDirPath, 0755)
 
-		// 一時的に宛先ディレクトリを変更
-		originalDest := copier.destDir
-		copier.destDir = destDirPath
+		copier := NewFileCopier(sourceDir, destDirPath, options, nil, nil, nil)
 
 		err := copier.CopyFiles()
 		if err != nil {
 			b.Fatalf("CopyFilesが失敗: %v", err)
 		}
 		copier.wg.Wait()
-
-		// 元に戻す
-		copier.destDir = originalDest
 
 		// クリーンアップ
 		os.RemoveAll(destDirPath)
@@ -957,25 +952,20 @@ func BenchmarkCopyFiles_WithFilter(b *testing.B) {
 	options.MaxConcurrent = 4
 	options.ProgressInterval = time.Hour // 進捗表示を無効化
 	fileFilter := filter.NewFilter("*.txt,*.log", "*.tmp,*.bak")
-	copier := NewFileCopier(sourceDir, destDir, options, fileFilter, nil, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		// 各ベンチマーク実行で新しいcopierを作成
 		destDirPath := filepath.Join(destDir, fmt.Sprintf("dest_%d", i))
 		os.MkdirAll(destDirPath, 0755)
 
-		// 一時的に宛先ディレクトリを変更
-		originalDest := copier.destDir
-		copier.destDir = destDirPath
+		copier := NewFileCopier(sourceDir, destDirPath, options, fileFilter, nil, nil)
 
 		err := copier.CopyFiles()
 		if err != nil {
 			b.Fatalf("CopyFilesが失敗: %v", err)
 		}
 		copier.wg.Wait()
-
-		// 元に戻す
-		copier.destDir = originalDest
 
 		// クリーンアップ
 		os.RemoveAll(destDirPath)

@@ -240,6 +240,7 @@ func TestLoggerNoProgressMode(t *testing.T) {
 
 // ベンチマークテスト
 func BenchmarkLoggerInfo(b *testing.B) {
+	// ベンチマークテストではログ出力を抑制
 	logger := NewLogger("", false, false)
 	if logger == nil {
 		b.Fatal("NewLogger() が nil を返しました")
@@ -253,6 +254,7 @@ func BenchmarkLoggerInfo(b *testing.B) {
 }
 
 func BenchmarkLoggerDebug(b *testing.B) {
+	// ベンチマークテストではログ出力を抑制
 	logger := NewLogger("", true, false)
 	if logger == nil {
 		b.Fatal("NewLogger() が nil を返しました")
@@ -266,6 +268,7 @@ func BenchmarkLoggerDebug(b *testing.B) {
 }
 
 func BenchmarkLoggerProgress(b *testing.B) {
+	// ベンチマークテストではログ出力を抑制
 	logger := NewLogger("", false, true)
 	if logger == nil {
 		b.Fatal("NewLogger() が nil を返しました")
@@ -279,6 +282,7 @@ func BenchmarkLoggerProgress(b *testing.B) {
 }
 
 func BenchmarkLoggerWithFields(b *testing.B) {
+	// ベンチマークテストではログ出力を抑制
 	logger := NewLogger("", false, false)
 	if logger == nil {
 		b.Fatal("NewLogger() が nil を返しました")

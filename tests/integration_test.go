@@ -528,27 +528,42 @@ func TestErrorHandling(t *testing.T) {
 
 // BenchmarkFileCopy はファイルコピーのベンチマーク
 func BenchmarkFileCopy(b *testing.B) {
-	env := NewTestEnvironment(&testing.T{})
-	defer env.Cleanup()
+	// ベンチマークテストではログ出力を抑制
+	tempDir := b.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
 
 	// ベンチマーク用のファイルを作成
-	if err := env.CreateTestFile("benchmark.txt", 1024*1024); err != nil {
+	testFile := filepath.Join(sourceDir, "benchmark.txt")
+	content := make([]byte, 1024*1024) // 1MB
+	for i := range content {
+		content[i] = byte(i % 256)
+	}
+	if err := os.WriteFile(testFile, content, 0644); err != nil {
 		b.Fatalf("ベンチマークファイルの作成に失敗: %v", err)
 	}
 
+	options := copier.DefaultOptions()
+	options.ProgressInterval = time.Hour // 進捗表示を無効化
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		// 宛先ディレクトリをクリア
-		if err := os.RemoveAll(env.DestDir); err != nil {
-			b.Fatalf("宛先ディレクトリのクリアに失敗: %v", err)
-		}
-		if err := os.MkdirAll(env.DestDir, 0755); err != nil {
-			b.Fatalf("宛先ディレクトリの作成に失敗: %v", err)
-		}
+		// 各ベンチマーク実行で新しい宛先ディレクトリを作成
+		destDirPath := filepath.Join(destDir, fmt.Sprintf("dest_%d", i))
+		os.MkdirAll(destDirPath, 0755)
+
+		// 新しいcopierを作成
+		benchCopier := copier.NewFileCopier(sourceDir, destDirPath, options, nil, nil, nil)
 
 		// ファイルをコピー
-		if err := env.FileCopier.CopyFiles(); err != nil {
+		if err := benchCopier.CopyFiles(); err != nil {
 			b.Fatalf("ファイルコピーに失敗: %v", err)
 		}
+
+		// クリーンアップ
+		os.RemoveAll(destDirPath)
 	}
 }

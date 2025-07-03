@@ -6,11 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/sakuhanight/gopier/internal/database"
 )
+
+// stdoutMutex は標準出力の変更を同期するためのミューテックス
+var stdoutMutex sync.Mutex
 
 // resetCommands はテスト間でコマンドの状態をリセットします
 func resetCommands() {
@@ -1565,10 +1569,16 @@ func TestDBCommands_EdgeCases(t *testing.T) {
 	}
 	db.Close()
 
+	// 標準出力の変更を同期
+	stdoutMutex.Lock()
+
 	// 標準出力をパイプに差し替え
 	rOut, wOut, _ := os.Pipe()
 	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
+	defer func() {
+		os.Stdout = origStdout
+		stdoutMutex.Unlock()
+	}()
 	os.Stdout = wOut
 
 	// 空のDBでlistCmdを実行
@@ -1580,6 +1590,40 @@ func TestDBCommands_EdgeCases(t *testing.T) {
 	output := string(out)
 	if !strings.Contains(output, "ファイル") && !strings.Contains(output, "file") && !strings.Contains(output, "データ") {
 		t.Errorf("空のDBでの出力が期待されません: %s", output)
+	}
+}
+
+func TestDBListCmd_Stdout(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "list_test.db")
+
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+	db.AddFile(database.FileInfo{Path: "list_test.txt", Size: 100, Status: database.StatusSuccess, LastSyncTime: time.Now()})
+	db.Close()
+
+	// 標準出力の変更を同期
+	stdoutMutex.Lock()
+
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() {
+		os.Stdout = origStdout
+		stdoutMutex.Unlock()
+	}()
+	os.Stdout = wOut
+
+	listCmd.SetArgs([]string{"--db", dbPath})
+	listCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !(strings.Contains(output, "list_test.txt") || strings.Contains(output, "Usage:") || strings.Contains(output, "help") || strings.Contains(output, "Available Commands") || strings.Contains(output, "Flags")) {
+		t.Errorf("listコマンドの出力が期待されません: %s", output)
 	}
 }
 
@@ -1601,33 +1645,5 @@ func BenchmarkDBExportCmd(b *testing.B) {
 	// ベンチマークテスト
 	for i := 0; i < b.N; i++ {
 		// コマンドの構築をベンチマーク
-	}
-}
-
-func TestDBListCmd_Stdout(t *testing.T) {
-	resetCommands()
-	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "list_test.db")
-
-	db, err := database.NewSyncDB(dbPath, database.NormalSync)
-	if err != nil {
-		t.Fatalf("DB作成失敗: %v", err)
-	}
-	db.AddFile(database.FileInfo{Path: "list_test.txt", Size: 100, Status: database.StatusSuccess, LastSyncTime: time.Now()})
-	db.Close()
-
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
-
-	listCmd.SetArgs([]string{"--db", dbPath})
-	listCmd.Execute()
-	wOut.Close()
-	out, _ := io.ReadAll(rOut)
-
-	output := string(out)
-	if !(strings.Contains(output, "list_test.txt") || strings.Contains(output, "Usage:") || strings.Contains(output, "help") || strings.Contains(output, "Available Commands") || strings.Contains(output, "Flags")) {
-		t.Errorf("listコマンドの出力が期待されません: %s", output)
 	}
 }
