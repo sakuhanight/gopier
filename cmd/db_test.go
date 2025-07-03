@@ -345,21 +345,17 @@ func TestDBListCmd_ActualExecution(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// 基本的なlistコマンド実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
 	if err := rootCmd.Execute(); err != nil {
 		t.Errorf("TestDBListCmd_ActualExecution: listコマンドの実行に失敗: %v", err)
 	}
-	wOut.Close()
-	out, _ := io.ReadAll(rOut)
 
-	output := string(out)
+	output := readOutput(rOut)
 	if !strings.Contains(output, "success.txt") && !strings.Contains(output, "failed.txt") {
 		t.Errorf("listコマンドの出力にファイル情報が含まれていません: %s", output)
 	}

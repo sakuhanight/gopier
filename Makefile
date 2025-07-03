@@ -88,7 +88,7 @@ test:
 .PHONY: test-coverage
 test-coverage:
 	@echo "テストカバレッジ実行中..."
-	go test -v -coverprofile=coverage.out ./cmd/... ./internal/... || true
+	go test -v -coverprofile=coverage.out ./cmd/... ./internal/...
 	@echo "カバレッジレポート生成中..."
 	@if [ -f coverage.out ]; then \
 		go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTMLレポート生成をスキップしました"; \
