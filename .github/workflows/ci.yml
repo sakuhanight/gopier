@@ -72,10 +72,10 @@ jobs:
       - name: Build
         run: pwsh -NonInteractive -NoProfile -Command "& { .\build.ps1 build }"
       - name: Test
-        run: pwsh -NonInteractive -NoProfile -Command "& { .\build.ps1 test }"
+        run: pwsh -Command ".\build.ps1 test"
         timeout-minutes: 10
       - name: Coverage
-        run: pwsh -NonInteractive -NoProfile -Command "& { .\build.ps1 test-coverage }"
+        run: pwsh -Command ".\build.ps1 test-coverage"
         timeout-minutes: 10
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
