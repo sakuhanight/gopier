@@ -157,7 +157,9 @@ function Build-CrossPlatform {
 function Test-Project {
     Write-ColorOutput "テスト実行中..." "Green"
     
-    if (-not (Test-GoCommand)) { return }
+    if (-not (Test-GoCommand)) { 
+        exit 1
+    }
     
     try {
         Write-ColorOutput "通常テスト実行中..." "Yellow"
@@ -179,6 +181,7 @@ function Test-Project {
         }
         
         Write-ColorOutput "テスト完了" "Green"
+        exit 0
     }
     catch {
         Write-ColorOutput "テストエラー: $_" "Red"
@@ -190,7 +193,9 @@ function Test-Project {
 function Test-Coverage {
     Write-ColorOutput "テストカバレッジ実行中..." "Green"
     
-    if (-not (Test-GoCommand)) { return }
+    if (-not (Test-GoCommand)) { 
+        exit 1
+    }
     
     try {
         Write-ColorOutput "通常テストカバレッジ実行中..." "Yellow"
@@ -221,6 +226,7 @@ function Test-Coverage {
         
         go tool cover -html=coverage.out -o coverage.html
         Write-ColorOutput "カバレッジレポート: coverage.html" "Green"
+        exit 0
     }
     catch {
         Write-ColorOutput "カバレッジテストエラー: $_" "Red"
