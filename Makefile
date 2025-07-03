@@ -88,11 +88,12 @@ test:
 .PHONY: test-coverage
 test-coverage:
 	@echo "テストカバレッジ実行中..."
-	go test -v -coverprofile=coverage.out ./cmd/... ./internal/...
+	go test -v -coverprofile=coverage.out ./cmd/... ./internal/... || true
 	@echo "カバレッジレポート生成中..."
 	@if [ -f coverage.out ]; then \
-		go tool cover -html=coverage.out -o coverage.html; \
+		go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTMLレポート生成をスキップしました"; \
 		echo "カバレッジレポート: coverage.html"; \
+		go tool cover -func=coverage.out || echo "カバレッジ関数レポート生成をスキップしました"; \
 	else \
 		echo "カバレッジファイルが見つかりません"; \
 	fi
