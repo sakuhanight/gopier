@@ -84,6 +84,25 @@ test:
 	@echo "統合テスト実行中..."
 	go test -v ./tests/...
 
+# テスト実行（タイムアウト付き）
+.PHONY: test-timeout
+test-timeout:
+	@echo "テスト実行中（タイムアウト60秒）..."
+	@if command -v gtimeout >/dev/null 2>&1; then \
+		gtimeout 60s go test -v ./...; \
+		echo "統合テスト実行中（タイムアウト60秒）..."; \
+		gtimeout 60s go test -v ./tests/...; \
+	elif command -v timeout >/dev/null 2>&1; then \
+		timeout 60s go test -v ./...; \
+		echo "統合テスト実行中（タイムアウト60秒）..."; \
+		timeout 60s go test -v ./tests/...; \
+	else \
+		echo "タイムアウトコマンドが見つかりません。通常のテストを実行します。"; \
+		go test -v ./...; \
+		echo "統合テスト実行中..."; \
+		go test -v ./tests/...; \
+	fi
+
 # テストカバレッジ
 .PHONY: test-coverage
 test-coverage:

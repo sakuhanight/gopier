@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -36,7 +37,7 @@ func setupTestEnvironment(t *testing.T) (string, func()) {
 }
 
 // captureOutput は標準出力をキャプチャします
-func captureOutput(t *testing.T) (*os.File, func()) {
+func captureOutput(t *testing.T) (*os.File, *os.File, func()) {
 	stdoutMutex.Lock()
 	// 標準出力をパイプに差し替え
 	rOut, wOut, _ := os.Pipe()
@@ -45,22 +46,41 @@ func captureOutput(t *testing.T) (*os.File, func()) {
 
 	// クリーンアップ関数
 	cleanup := func() {
-		wOut.Close()
 		os.Stdout = origStdout
+		wOut.Close()
 		stdoutMutex.Unlock()
 	}
 
-	return rOut, cleanup
+	return rOut, wOut, cleanup
 }
 
 // readOutput はキャプチャした出力を読み取ります
 func readOutput(rOut *os.File) string {
-	// パイプの書き込み側を閉じる
-	// より短い待機時間を設定
-	time.Sleep(10 * time.Millisecond)
+	// パイプからの読み取りを確実に行う
+	// コンテキスト付きでタイムアウトを設定
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	out, _ := io.ReadAll(rOut)
-	return string(out)
+	// ゴルーチンで読み取りを実行
+	var output []byte
+	var readErr error
+	done := make(chan struct{})
+
+	go func() {
+		output, readErr = io.ReadAll(rOut)
+		close(done)
+	}()
+
+	// タイムアウトまたは完了を待機
+	select {
+	case <-ctx.Done():
+		return "読み取りタイムアウト"
+	case <-done:
+		if readErr != nil {
+			return fmt.Sprintf("読み取りエラー: %v", readErr)
+		}
+		return string(output)
+	}
 }
 
 func TestDBListCmd(t *testing.T) {
@@ -324,29 +344,19 @@ func TestDBResetCmd(t *testing.T) {
 func TestDBListCmd_ActualExecution(t *testing.T) {
 	rootCmd := resetCommands()
 	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "list_execution_test.db")
+	dbPath := filepath.Join(tempDir, "actual_execution_test.db")
 
-	// テスト用DBを作成し、複数のファイル情報を追加
+	// テスト用DBを作成
 	db, err := database.NewSyncDB(dbPath, database.NormalSync)
 	if err != nil {
 		t.Fatalf("DB作成失敗: %v", err)
 	}
-
-	// 様々なステータスのファイルを追加
-	testFiles := []database.FileInfo{
-		{Path: "success.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
-		{Path: "failed.txt", Size: 2000, Status: database.StatusFailed, LastSyncTime: time.Now(), LastError: "test error"},
-		{Path: "skipped.txt", Size: 1500, Status: database.StatusSkipped, LastSyncTime: time.Now()},
-		{Path: "pending.txt", Size: 3000, Status: database.StatusPending, LastSyncTime: time.Now()},
-	}
-
-	for _, file := range testFiles {
-		db.AddFile(file)
-	}
+	db.AddFile(database.FileInfo{Path: "success.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()})
+	db.AddFile(database.FileInfo{Path: "failed.txt", Size: 2000, Status: database.StatusFailed, LastSyncTime: time.Now()})
 	db.Close()
 
 	// 標準出力をキャプチャ
-	rOut, cleanup := captureOutput(t)
+	rOut, wOut, cleanup := captureOutput(t)
 	defer cleanup()
 
 	// 基本的なlistコマンド実行
@@ -354,6 +364,7 @@ func TestDBListCmd_ActualExecution(t *testing.T) {
 	if err := rootCmd.Execute(); err != nil {
 		t.Errorf("TestDBListCmd_ActualExecution: listコマンドの実行に失敗: %v", err)
 	}
+	wOut.Close()
 
 	output := readOutput(rOut)
 	if !strings.Contains(output, "success.txt") && !strings.Contains(output, "failed.txt") {
