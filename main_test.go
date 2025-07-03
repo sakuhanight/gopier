@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/sakuhanight/gopier/cmd"
 )
@@ -277,10 +278,19 @@ func TestMainFunctionCoverage(t *testing.T) {
 }
 
 func TestMainFunctionDirect(t *testing.T) {
-	// main関数の直接テスト
-	err := runMainWithArgs([]string{"gopier", "--help"})
-	if err != nil {
-		t.Errorf("予期しないエラーが発生しました: %v", err)
+	done := make(chan struct{})
+	go func() {
+		err := runMainWithArgs([]string{"gopier", "--help"})
+		if err != nil {
+			t.Errorf("予期しないエラーが発生しました: %v", err)
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+		// OK
+	case <-time.After(5 * time.Second):
+		t.Fatal("タイムアウト: TestMainFunctionDirectが5秒以内に終了しませんでした")
 	}
 }
 
