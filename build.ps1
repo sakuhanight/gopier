@@ -27,7 +27,7 @@
 
 param(
     [Parameter(Position=0)]
-    [ValidateSet("build", "test", "release", "clean", "install", "cross-build", "help")]
+    [ValidateSet("build", "test", "test-coverage", "release", "clean", "install", "cross-build", "help")]
     [string]$Action = "build",
     
     [Parameter()]
@@ -245,6 +245,7 @@ function Show-Help {
     Write-ColorOutput "  release      - リリースビルド（最適化）" "White"
     Write-ColorOutput "  cross-build  - クロスプラットフォームビルド" "White"
     Write-ColorOutput "  test         - テスト実行" "White"
+    Write-ColorOutput "  test-coverage - テストカバレッジ実行" "White"
     Write-ColorOutput "  clean        - クリーンアップ" "White"
     Write-ColorOutput "  install      - インストール" "White"
     Write-ColorOutput "  help         - このヘルプを表示" "White"
@@ -267,6 +268,7 @@ switch ($Action.ToLower()) {
     "release" { Build-Release }
     "cross-build" { Build-CrossPlatform }
     "test" { Test-Project }
+    "test-coverage" { Test-Coverage }
     "clean" { Clean-Project }
     "install" { Install-Project }
     "help" { Show-Help }
