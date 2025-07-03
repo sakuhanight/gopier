@@ -161,7 +161,7 @@ function Test-Project {
     
     try {
         Write-ColorOutput "通常テスト実行中..." "Yellow"
-        $result = go test -v ./...
+        go test -v ./...
         if ($LASTEXITCODE -eq 0) {
             Write-ColorOutput "通常テスト成功" "Green"
         } else {
@@ -170,7 +170,7 @@ function Test-Project {
         }
         
         Write-ColorOutput "統合テスト実行中..." "Yellow"
-        $result = go test -v ./tests/...
+        go test -v ./tests/...
         if ($LASTEXITCODE -eq 0) {
             Write-ColorOutput "統合テスト成功" "Green"
         } else {
@@ -194,7 +194,7 @@ function Test-Coverage {
     
     try {
         Write-ColorOutput "通常テストカバレッジ実行中..." "Yellow"
-        $result = go test -v -coverprofile=coverage.out ./...
+        go test -v -coverprofile=coverage.out ./...
         if ($LASTEXITCODE -eq 0) {
             Write-ColorOutput "通常テストカバレッジ成功" "Green"
         } else {
@@ -203,7 +203,7 @@ function Test-Coverage {
         }
         
         Write-ColorOutput "統合テストカバレッジ実行中..." "Yellow"
-        $result = go test -v -coverprofile=coverage-integration.out ./tests/...
+        go test -v -coverprofile=coverage-integration.out ./tests/...
         if ($LASTEXITCODE -eq 0) {
             Write-ColorOutput "統合テストカバレッジ成功" "Green"
         } else {
