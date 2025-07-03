@@ -257,7 +257,7 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// デバッグ出力（CI環境での問題調査用）
+	// デバッグ出力
 	fmt.Fprintf(os.Stderr, "DEBUG: args=%v, TESTING=%s\n", args, os.Getenv("TESTING"))
 
 	// ヘルプ表示の確認
@@ -275,13 +275,14 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 	if os.Getenv("TESTING") == "1" {
 		helpFlag, _ := cmd.Flags().GetBool("help")
 		if helpFlag {
+			fmt.Fprintf(os.Stderr, "DEBUG: テスト環境で--helpフラグ、ヘルプ表示をスキップ\n")
 			return nil
 		}
 	}
 
 	// テスト環境では実際のコピー処理をスキップ
 	if os.Getenv("TESTING") == "1" {
-		fmt.Println("テスト環境のため、実際のコピー処理はスキップされます")
+		fmt.Fprintf(os.Stderr, "DEBUG: テスト環境でコピー処理をスキップ\n")
 		return nil
 	}
 
