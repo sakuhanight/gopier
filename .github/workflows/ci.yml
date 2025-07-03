@@ -72,9 +72,11 @@ jobs:
       - name: Build
         run: pwsh build.ps1 build
       - name: Test
-        run: pwsh build.ps1 test
+        run: pwsh -Command "& { $ErrorActionPreference = 'Stop'; & './build.ps1' test }"
+        timeout-minutes: 10
       - name: Coverage
-        run: pwsh build.ps1 test-coverage
+        run: pwsh -Command "& { $ErrorActionPreference = 'Stop'; & './build.ps1' test-coverage }"
+        timeout-minutes: 10
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:

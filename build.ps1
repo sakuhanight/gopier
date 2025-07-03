@@ -198,47 +198,21 @@ function Test-Project {
     
     try {
         Write-ColorOutput "通常テスト実行中..." "Yellow"
-        $job = Start-Job -ScriptBlock { 
-            Set-Location $using:PWD
-            go test -v ./...
-        }
-        
-        if (Wait-Job $job -Timeout 300) {
-            $result = Receive-Job $job
-            Remove-Job $job
-            if ($LASTEXITCODE -eq 0) {
-                Write-ColorOutput "通常テスト成功" "Green"
-            } else {
-                Write-ColorOutput "通常テスト失敗" "Red"
-                throw "通常テストが失敗しました"
-            }
+        go test -v ./...
+        if ($LASTEXITCODE -eq 0) {
+            Write-ColorOutput "通常テスト成功" "Green"
         } else {
-            Stop-Job $job
-            Remove-Job $job
-            Write-ColorOutput "通常テストがタイムアウトしました" "Red"
-            throw "通常テストがタイムアウトしました"
+            Write-ColorOutput "通常テスト失敗" "Red"
+            throw "通常テストが失敗しました"
         }
         
         Write-ColorOutput "統合テスト実行中..." "Yellow"
-        $job = Start-Job -ScriptBlock { 
-            Set-Location $using:PWD
-            go test -v ./tests/...
-        }
-        
-        if (Wait-Job $job -Timeout 300) {
-            $result = Receive-Job $job
-            Remove-Job $job
-            if ($LASTEXITCODE -eq 0) {
-                Write-ColorOutput "統合テスト成功" "Green"
-            } else {
-                Write-ColorOutput "統合テスト失敗" "Red"
-                throw "統合テストが失敗しました"
-            }
+        go test -v ./tests/...
+        if ($LASTEXITCODE -eq 0) {
+            Write-ColorOutput "統合テスト成功" "Green"
         } else {
-            Stop-Job $job
-            Remove-Job $job
-            Write-ColorOutput "統合テストがタイムアウトしました" "Red"
-            throw "統合テストがタイムアウトしました"
+            Write-ColorOutput "統合テスト失敗" "Red"
+            throw "統合テストが失敗しました"
         }
         
         Write-ColorOutput "テスト完了" "Green"
@@ -260,47 +234,21 @@ function Test-Coverage {
     
     try {
         Write-ColorOutput "通常テストカバレッジ実行中..." "Yellow"
-        $job = Start-Job -ScriptBlock { 
-            Set-Location $using:PWD
-            go test -v -coverprofile=coverage.out ./...
-        }
-        
-        if (Wait-Job $job -Timeout 300) {
-            $result = Receive-Job $job
-            Remove-Job $job
-            if ($LASTEXITCODE -eq 0) {
-                Write-ColorOutput "通常テストカバレッジ成功" "Green"
-            } else {
-                Write-ColorOutput "通常テストカバレッジ失敗" "Red"
-                throw "通常テストカバレッジが失敗しました"
-            }
+        go test -v -coverprofile=coverage.out ./...
+        if ($LASTEXITCODE -eq 0) {
+            Write-ColorOutput "通常テストカバレッジ成功" "Green"
         } else {
-            Stop-Job $job
-            Remove-Job $job
-            Write-ColorOutput "通常テストカバレッジがタイムアウトしました" "Red"
-            throw "通常テストカバレッジがタイムアウトしました"
+            Write-ColorOutput "通常テストカバレッジ失敗" "Red"
+            throw "通常テストカバレッジが失敗しました"
         }
         
         Write-ColorOutput "統合テストカバレッジ実行中..." "Yellow"
-        $job = Start-Job -ScriptBlock { 
-            Set-Location $using:PWD
-            go test -v -coverprofile=coverage-integration.out ./tests/...
-        }
-        
-        if (Wait-Job $job -Timeout 300) {
-            $result = Receive-Job $job
-            Remove-Job $job
-            if ($LASTEXITCODE -eq 0) {
-                Write-ColorOutput "統合テストカバレッジ成功" "Green"
-            } else {
-                Write-ColorOutput "統合テストカバレッジ失敗" "Red"
-                throw "統合テストカバレッジが失敗しました"
-            }
+        go test -v -coverprofile=coverage-integration.out ./tests/...
+        if ($LASTEXITCODE -eq 0) {
+            Write-ColorOutput "統合テストカバレッジ成功" "Green"
         } else {
-            Stop-Job $job
-            Remove-Job $job
-            Write-ColorOutput "統合テストカバレッジがタイムアウトしました" "Red"
-            throw "統合テストカバレッジがタイムアウトしました"
+            Write-ColorOutput "統合テストカバレッジ失敗" "Red"
+            throw "統合テストカバレッジが失敗しました"
         }
         
         # カバレッジファイルをマージ
