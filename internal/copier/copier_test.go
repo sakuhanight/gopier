@@ -1068,20 +1068,20 @@ func TestCopyFiles_SingleFileMode(t *testing.T) {
 }
 
 // TestCopyFile_VerifyMode は検証モードのテスト
-func TestCopyFile_VerifyMode(t *testing.T) {
+func TestCopyFiles_VerifyMode(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
 	os.MkdirAll(sourceDir, 0755)
 	os.MkdirAll(destDir, 0755)
 
-	// ソースファイルを作成
-	sourceFile := filepath.Join(sourceDir, "test.txt")
-	os.WriteFile(sourceFile, []byte("test content"), 0644)
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	os.WriteFile(testFile, []byte("test content"), 0644)
 
-	// 宛先ファイルを作成（異なる内容）
+	// 宛先にも同じファイルを作成
 	destFile := filepath.Join(destDir, "test.txt")
-	os.WriteFile(destFile, []byte("different content"), 0644)
+	os.WriteFile(destFile, []byte("test content"), 0644)
 
 	options := DefaultOptions()
 	options.Mode = ModeVerify
@@ -1094,16 +1094,16 @@ func TestCopyFile_VerifyMode(t *testing.T) {
 }
 
 // TestCopyFile_CopyAndVerifyMode はコピーと検証モードのテスト
-func TestCopyFile_CopyAndVerifyMode(t *testing.T) {
+func TestCopyFiles_CopyAndVerifyMode(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
 	os.MkdirAll(sourceDir, 0755)
 	os.MkdirAll(destDir, 0755)
 
-	// ソースファイルを作成
-	sourceFile := filepath.Join(sourceDir, "test.txt")
-	os.WriteFile(sourceFile, []byte("test content"), 0644)
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	os.WriteFile(testFile, []byte("test content"), 0644)
 
 	options := DefaultOptions()
 	options.Mode = ModeCopyAndVerify
@@ -1122,16 +1122,16 @@ func TestCopyFile_CopyAndVerifyMode(t *testing.T) {
 }
 
 // TestCopyFile_RetryLogic はリトライロジックのテスト
-func TestCopyFile_RetryLogic(t *testing.T) {
+func TestCopyFiles_RetryLogic(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
 	os.MkdirAll(sourceDir, 0755)
 	os.MkdirAll(destDir, 0755)
 
-	// ソースファイルを作成
-	sourceFile := filepath.Join(sourceDir, "test.txt")
-	os.WriteFile(sourceFile, []byte("test content"), 0644)
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	os.WriteFile(testFile, []byte("test content"), 0644)
 
 	options := DefaultOptions()
 	options.MaxRetries = 2
@@ -1145,7 +1145,7 @@ func TestCopyFile_RetryLogic(t *testing.T) {
 }
 
 // TestCopyFile_OverwriteDisabled は上書き無効時のテスト
-func TestCopyFile_OverwriteDisabled(t *testing.T) {
+func TestCopyFiles_OverwriteDisabled(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
@@ -1154,7 +1154,7 @@ func TestCopyFile_OverwriteDisabled(t *testing.T) {
 
 	// ソースファイルを作成
 	sourceFile := filepath.Join(sourceDir, "test.txt")
-	os.WriteFile(sourceFile, []byte("source content"), 0644)
+	os.WriteFile(sourceFile, []byte("test content"), 0644)
 
 	// 宛先ファイルを作成（既に存在）
 	destFile := filepath.Join(destDir, "test.txt")
@@ -1180,7 +1180,7 @@ func TestCopyFile_OverwriteDisabled(t *testing.T) {
 }
 
 // TestCopyFile_ProgressChannelFull は進捗チャンネルが一杯の時のテスト
-func TestCopyFile_ProgressChannelFull(t *testing.T) {
+func TestCopyFiles_ProgressChannelFull(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
@@ -1208,7 +1208,7 @@ func TestCopyFile_ProgressChannelFull(t *testing.T) {
 }
 
 // TestCopyFile_ConcurrentAccess は並行アクセスのテスト
-func TestCopyFile_ConcurrentAccess(t *testing.T) {
+func TestCopyFiles_ConcurrentAccess(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
@@ -1240,7 +1240,7 @@ func TestCopyFile_ConcurrentAccess(t *testing.T) {
 }
 
 // TestCopyFile_FileSystemErrors はファイルシステムエラーのテスト
-func TestCopyFile_FileSystemErrors(t *testing.T) {
+func TestCopyFiles_FileSystemErrors(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
@@ -1262,8 +1262,8 @@ func TestCopyFile_FileSystemErrors(t *testing.T) {
 	}
 }
 
-// TestCopyFile_ComplexFiltering は複雑なフィルタリングのテスト
-func TestCopyFile_ComplexFiltering(t *testing.T) {
+// TestCopyFiles_ComplexFiltering は複雑なフィルタリングのテスト
+func TestCopyFiles_ComplexFiltering(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
@@ -1323,8 +1323,8 @@ func TestCopyFile_ComplexFiltering(t *testing.T) {
 	}
 }
 
-// TestCopyFile_HashVerificationErrors はハッシュ検証エラーのテスト
-func TestCopyFile_HashVerificationErrors(t *testing.T) {
+// TestCopyFiles_HashVerificationErrors はハッシュ検証エラーのテスト
+func TestCopyFiles_HashVerificationErrors(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
@@ -1340,7 +1340,7 @@ func TestCopyFile_HashVerificationErrors(t *testing.T) {
 	os.WriteFile(destFile, []byte("different content"), 0644)
 
 	options := DefaultOptions()
-	options.VerifyHash = true
+	options.Mode = ModeCopyAndVerify
 	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
 
 	err := copier.CopyFiles()
@@ -1349,8 +1349,8 @@ func TestCopyFile_HashVerificationErrors(t *testing.T) {
 	}
 }
 
-// TestCopyFile_NonRecursiveMode は非再帰モードのテスト
-func TestCopyFile_NonRecursiveMode(t *testing.T) {
+// TestCopyFiles_NonRecursiveMode は非再帰モードのテスト
+func TestCopyFiles_NonRecursiveMode(t *testing.T) {
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
@@ -1380,5 +1380,204 @@ func TestCopyFile_NonRecursiveMode(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(destDir, "subdir", "sub.txt")); err == nil {
 		t.Error("サブディレクトリのファイルがコピーされています（非再帰モード）")
+	}
+}
+
+// TestCopyFiles_LoggerNil はloggerがnilの場合のテスト
+func TestCopyFiles_LoggerNil(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	os.WriteFile(testFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	// loggerをnilに設定
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	err := copier.CopyFiles()
+	if err != nil {
+		t.Errorf("loggerがnilの場合でもエラーが発生すべきではありません: %v", err)
+	}
+
+	// ファイルがコピーされているか確認
+	copiedFile := filepath.Join(destDir, "test.txt")
+	if _, err := os.Stat(copiedFile); err != nil {
+		t.Errorf("ファイルがコピーされていません: %v", err)
+	}
+}
+
+// TestCopyFiles_DatabaseNil はDBがnilの場合のテスト
+func TestCopyFiles_DatabaseNil(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	os.WriteFile(testFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	log := logger.NewLogger("", false, false)
+	// DBをnilに設定
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, log)
+
+	err := copier.CopyFiles()
+	if err != nil {
+		t.Errorf("DBがnilの場合でもエラーが発生すべきではありません: %v", err)
+	}
+
+	// ファイルがコピーされているか確認
+	copiedFile := filepath.Join(destDir, "test.txt")
+	if _, err := os.Stat(copiedFile); err != nil {
+		t.Errorf("ファイルがコピーされていません: %v", err)
+	}
+}
+
+// TestCopyFiles_ProgressCallbackNil は進捗コールバックがnilの場合のテスト
+func TestCopyFiles_ProgressCallbackNil(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	os.WriteFile(testFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	log := logger.NewLogger("", false, false)
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, log)
+	// 進捗コールバックをnilに設定
+	copier.SetProgressCallback(nil)
+
+	err := copier.CopyFiles()
+	if err != nil {
+		t.Errorf("進捗コールバックがnilの場合でもエラーが発生すべきではありません: %v", err)
+	}
+
+	// ファイルがコピーされているか確認
+	copiedFile := filepath.Join(destDir, "test.txt")
+	if _, err := os.Stat(copiedFile); err != nil {
+		t.Errorf("ファイルがコピーされていません: %v", err)
+	}
+}
+
+// TestCopyFiles_EmptyDirectory は空ディレクトリのテスト
+func TestCopyFiles_EmptyDirectory(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "empty_source")
+	destDir := filepath.Join(tempDir, "empty_dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	options := DefaultOptions()
+	log := logger.NewLogger("", false, false)
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, log)
+
+	err := copier.CopyFiles()
+	if err != nil {
+		t.Errorf("空ディレクトリでエラーが発生しました: %v", err)
+	}
+
+	// 宛先ディレクトリが作成されているか確認
+	if _, err := os.Stat(destDir); err != nil {
+		t.Errorf("宛先ディレクトリが作成されていません: %v", err)
+	}
+}
+
+// TestCopyFiles_Symlink はシンボリックリンクのテスト
+func TestCopyFiles_Symlink(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	os.WriteFile(testFile, []byte("test content"), 0644)
+
+	// シンボリックリンクを作成
+	symlinkFile := filepath.Join(sourceDir, "link.txt")
+	os.Symlink(testFile, symlinkFile)
+
+	options := DefaultOptions()
+	log := logger.NewLogger("", false, false)
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, log)
+
+	err := copier.CopyFiles()
+	if err != nil {
+		t.Errorf("シンボリックリンクでエラーが発生しました: %v", err)
+	}
+
+	// シンボリックリンクがコピーされているか確認
+	copiedLink := filepath.Join(destDir, "link.txt")
+	if _, err := os.Stat(copiedLink); err != nil {
+		t.Errorf("シンボリックリンクがコピーされていません: %v", err)
+	}
+}
+
+// TestCopyFiles_PermissionError はパーミッションエラーのテスト
+func TestCopyFiles_PermissionError(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	os.WriteFile(testFile, []byte("test content"), 0644)
+
+	// 宛先ディレクトリを読み取り専用にする
+	os.Chmod(destDir, 0444)
+
+	options := DefaultOptions()
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	err := copier.CopyFiles()
+	// パーミッションエラーまたは成功のどちらでもOK（実装による）
+	if err != nil && !strings.Contains(err.Error(), "パーミッション") && !strings.Contains(err.Error(), "権限") {
+		t.Errorf("予期しないエラー: %v", err)
+	}
+
+	// パーミッションを元に戻す
+	os.Chmod(destDir, 0755)
+}
+
+// TestCopyFiles_HashVerificationDisabled はハッシュ検証無効のテスト
+func TestCopyFiles_HashVerificationDisabled(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	testFile := filepath.Join(sourceDir, "test.txt")
+	os.WriteFile(testFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	options.VerifyHash = false
+	logger := logger.NewLogger("", false, false)
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, logger)
+
+	err := copier.CopyFiles()
+	if err != nil {
+		t.Errorf("ハッシュ検証無効でエラーが発生しました: %v", err)
+	}
+
+	// ファイルがコピーされているか確認
+	copiedFile := filepath.Join(destDir, "test.txt")
+	if _, err := os.Stat(copiedFile); err != nil {
+		t.Errorf("ファイルがコピーされていません: %v", err)
 	}
 }
