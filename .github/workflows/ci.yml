@@ -95,6 +95,21 @@ jobs:
           $env:TESTING = "1"
           Write-Host "Environment variables set"
       
+      - name: Clean up previous test artifacts
+        run: |
+          Write-Host "Cleaning up previous test artifacts..."
+          if (Test-Path "coverage.out") { Remove-Item "coverage.out" -Force }
+          if (Test-Path "coverage.html") { Remove-Item "coverage.html" -Force }
+          if (Test-Path "*.db") { Remove-Item "*.db" -Force }
+          if (Test-Path "gopier.exe") { Remove-Item "gopier.exe" -Force }
+          Write-Host "Cleanup completed"
+      
+      - name: Kill any hanging processes
+        run: |
+          Write-Host "Killing any hanging processes..."
+          Get-Process | Where-Object {$_.ProcessName -like "*go*" -or $_.ProcessName -like "*gopier*"} | Stop-Process -Force -ErrorAction SilentlyContinue
+          Write-Host "Process cleanup completed"
+      
       - name: Set PowerShell execution policy
         run: |
           Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
@@ -126,6 +141,9 @@ jobs:
       - name: Test
         run: |
           Write-Host "Starting tests..."
+          $env:CI = "true"
+          $env:GITHUB_ACTIONS = "true"
+          $env:TESTING = "1"
           pwsh -Command ".\build.ps1 test"
           if ($LASTEXITCODE -ne 0) {
             Write-Host "Tests failed with exit code: $LASTEXITCODE"
@@ -137,6 +155,9 @@ jobs:
       - name: Coverage
         run: |
           Write-Host "Starting coverage tests..."
+          $env:CI = "true"
+          $env:GITHUB_ACTIONS = "true"
+          $env:TESTING = "1"
           pwsh -Command ".\build.ps1 test-coverage"
           if ($LASTEXITCODE -ne 0) {
             Write-Host "Coverage tests failed with exit code: $LASTEXITCODE"
