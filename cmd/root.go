@@ -258,7 +258,7 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	// デバッグ出力
-	fmt.Fprintf(os.Stderr, "DEBUG: args=%v, TESTING=%s\n", args, os.Getenv("TESTING"))
+	fmt.Fprintf(os.Stderr, "DEBUG: args=%v, TESTING=%s, os.Args=%v\n", args, os.Getenv("TESTING"), os.Args)
 
 	// ヘルプ表示の確認
 	if len(args) == 0 {
@@ -305,6 +305,7 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() error {
+	fmt.Fprintf(os.Stderr, "DEBUG: Execute() called, TESTING=%s\n", os.Getenv("TESTING"))
 	return rootCmd.Execute()
 }
 
