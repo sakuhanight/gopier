@@ -48,7 +48,7 @@ $BinaryName = $Output
 $BuildDir = "build"
 $Version = if (git describe --tags --always --dirty 2>$null) { git describe --tags --always --dirty } else { "dev" }
 $BuildTime = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-$LDFlags = "-ldflags `"-X github.com/sakuhanight/gopier/cmd.Version=$Version -X github.com/sakuhanight/gopier/cmd.BuildTime=$BuildTime`""
+$LDFlags = "-X github.com/sakuhanight/gopier/cmd.Version=$Version -X github.com/sakuhanight/gopier/cmd.BuildTime=$BuildTime"
 
 # 色付き出力関数
 function Write-ColorOutput {
@@ -77,19 +77,29 @@ function Test-GoCommand {
 function Build-Project {
     Write-ColorOutput "ビルド中..." "Green"
     
-    if (-not (Test-GoCommand)) { return }
+    if (-not (Test-GoCommand)) { 
+        exit 1
+    }
     
     try {
-        go build $LDFlags -o $BinaryName
-        if (Test-Path $BinaryName) {
-            $size = (Get-Item $BinaryName).Length / 1MB
-            Write-ColorOutput "ビルド完了: $BinaryName ($([math]::Round($size, 2)) MB)" "Green"
+        go build -ldflags $LDFlags -o $BinaryName
+        if ($LASTEXITCODE -eq 0) {
+            if (Test-Path $BinaryName) {
+                $size = (Get-Item $BinaryName).Length / 1MB
+                Write-ColorOutput "ビルド完了: $BinaryName ($([math]::Round($size, 2)) MB)" "Green"
+                exit 0
+            } else {
+                Write-ColorOutput "エラー: ビルドファイルが生成されませんでした" "Red"
+                exit 1
+            }
         } else {
             Write-ColorOutput "エラー: ビルドに失敗しました" "Red"
+            exit 1
         }
     }
     catch {
         Write-ColorOutput "ビルドエラー: $_" "Red"
+        exit 1
     }
 }
 
@@ -97,19 +107,29 @@ function Build-Project {
 function Build-Release {
     Write-ColorOutput "リリースビルド中..." "Green"
     
-    if (-not (Test-GoCommand)) { return }
+    if (-not (Test-GoCommand)) { 
+        exit 1
+    }
     
     try {
-        go build $LDFlags -ldflags "-s -w" -o $BinaryName
-        if (Test-Path $BinaryName) {
-            $size = (Get-Item $BinaryName).Length / 1MB
-            Write-ColorOutput "リリースビルド完了: $BinaryName ($([math]::Round($size, 2)) MB)" "Green"
+        go build -ldflags "$LDFlags -s -w" -o $BinaryName
+        if ($LASTEXITCODE -eq 0) {
+            if (Test-Path $BinaryName) {
+                $size = (Get-Item $BinaryName).Length / 1MB
+                Write-ColorOutput "リリースビルド完了: $BinaryName ($([math]::Round($size, 2)) MB)" "Green"
+                exit 0
+            } else {
+                Write-ColorOutput "エラー: リリースビルドファイルが生成されませんでした" "Red"
+                exit 1
+            }
         } else {
             Write-ColorOutput "エラー: リリースビルドに失敗しました" "Red"
+            exit 1
         }
     }
     catch {
         Write-ColorOutput "リリースビルドエラー: $_" "Red"
+        exit 1
     }
 }
 
@@ -117,7 +137,9 @@ function Build-Release {
 function Build-CrossPlatform {
     Write-ColorOutput "クロスプラットフォームビルド中..." "Green"
     
-    if (-not (Test-GoCommand)) { return }
+    if (-not (Test-GoCommand)) { 
+        exit 1
+    }
     
     if (-not (Test-Path $BuildDir)) {
         New-Item -ItemType Directory -Path $BuildDir | Out-Null
@@ -136,21 +158,34 @@ function Build-CrossPlatform {
         $platforms = @(@{OS=$Platform; ARCH=$Architecture; Ext=$ext})
     }
     
+    $buildSuccess = $true
     foreach ($p in $platforms) {
         Write-ColorOutput "$($p.OS) $($p.ARCH)..." "Yellow"
         try {
             $env:GOOS = $p.OS
             $env:GOARCH = $p.ARCH
             $outputName = "gopier-$($p.OS)-$($p.ARCH)$($p.Ext)"
-            go build $LDFlags -o "$BuildDir\$outputName"
-            Write-ColorOutput "  ✓ $outputName" "Green"
+            go build -ldflags $LDFlags -o "$BuildDir\$outputName"
+            if ($LASTEXITCODE -eq 0) {
+                Write-ColorOutput "  ✓ $outputName" "Green"
+            } else {
+                Write-ColorOutput "  ✗ $($p.OS) $($p.ARCH) ビルド失敗" "Red"
+                $buildSuccess = $false
+            }
         }
         catch {
             Write-ColorOutput "  ✗ $($p.OS) $($p.ARCH) ビルド失敗: $_" "Red"
+            $buildSuccess = $false
         }
     }
     
-    Write-ColorOutput "クロスプラットフォームビルド完了" "Green"
+    if ($buildSuccess) {
+        Write-ColorOutput "クロスプラットフォームビルド完了" "Green"
+        exit 0
+    } else {
+        Write-ColorOutput "クロスプラットフォームビルド失敗" "Red"
+        exit 1
+    }
 }
 
 # テスト実行
