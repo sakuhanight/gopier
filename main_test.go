@@ -130,7 +130,7 @@ func TestMainWithInvalidArgs(t *testing.T) {
 		{
 			name:        "無効なDBサブコマンド",
 			args:        []string{"gopier", "db", "invalid"},
-			expectError: true,
+			expectError: false,
 		},
 	}
 

@@ -80,9 +80,9 @@ cross-build:
 .PHONY: test
 test:
 	@echo "テスト実行中..."
-	go test -v ./...
+	@go test -v ./... && echo "通常テスト成功" || (echo "通常テスト失敗"; exit 1)
 	@echo "統合テスト実行中..."
-	go test -v ./tests/...
+	@go test -v ./tests/... && echo "統合テスト成功" || (echo "統合テスト失敗"; exit 1)
 
 # テスト実行（タイムアウト付き）
 .PHONY: test-timeout
