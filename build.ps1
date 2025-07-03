@@ -47,8 +47,8 @@ $ErrorActionPreference = "Stop"
 $BinaryName = $Output
 $BuildDir = "build"
 $Version = if (git describe --tags --always --dirty 2>$null) { git describe --tags --always --dirty } else { "dev" }
-$BuildTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-$LDFlags = "-ldflags `"-X main.Version=$Version -X main.BuildTime=$BuildTime`""
+$BuildTime = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+$LDFlags = "-ldflags `"-X github.com/sakuhanight/gopier/cmd.Version=$Version -X github.com/sakuhanight/gopier/cmd.BuildTime=$BuildTime`""
 
 # 色付き出力関数
 function Write-ColorOutput {

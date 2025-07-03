@@ -31,8 +31,8 @@ all: clean build
 build:
 	@echo "ビルド中..."
 	@VERSION=$${VERSION:-$$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}; \
-	BUILD_TIME=$$(date '+%Y-%m-%d %H:%M:%S'); \
-	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME'"; \
+	BUILD_TIME=$$(date '+%Y-%m-%d_%H-%M-%S'); \
+	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME"; \
 	echo "Version: $$VERSION"; \
 	echo "BuildTime: $$BUILD_TIME"; \
 	set -x; \
@@ -44,8 +44,8 @@ build:
 release:
 	@echo "リリースビルド中..."
 	@VERSION=$${VERSION:-$$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}; \
-	BUILD_TIME=$$(date '+%Y-%m-%d %H:%M:%S'); \
-	LDFLAGS="-s -w -X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME'"; \
+	BUILD_TIME=$$(date '+%Y-%m-%d_%H-%M-%S'); \
+	LDFLAGS="-s -w -X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME"; \
 	echo "Version: $$VERSION"; \
 	echo "BuildTime: $$BUILD_TIME"; \
 	if [ "$$GOOS" = "windows" ]; then \
@@ -61,8 +61,8 @@ release:
 cross-build:
 	@echo "クロスプラットフォームビルド中..."
 	@VERSION=$${VERSION:-$$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}; \
-	BUILD_TIME=$$(date '+%Y-%m-%d %H:%M:%S'); \
-	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME'"; \
+	BUILD_TIME=$$(date '+%Y-%m-%d_%H-%M-%S'); \
+	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME"; \
 	echo "Version: $$VERSION"; \
 	echo "BuildTime: $$BUILD_TIME"; \
 	$(MKDIR) $(BUILD_DIR); \

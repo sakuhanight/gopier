@@ -22,7 +22,8 @@ if "%VERSION%"=="" set "VERSION=dev"
 
 REM Get build time
 for /f "tokens=1-3 delims=/ " %%a in ('date /t') do set "BUILD_DATE=%%a-%%b-%%c"
-for /f "tokens=1-2 delims=: " %%a in ('time /t') do set "BUILD_TIME=%%a:%%b"
+for /f "tokens=1-2 delims=: " %%a in ('time /t') do set "BUILD_TIME=%%a-%%b"
+set "BUILD_TIME_FULL=%BUILD_DATE%_%BUILD_TIME%"
 
 echo Gopier Build Script
 echo ===================
@@ -39,7 +40,7 @@ goto :%ACTION%
 
 :build
 echo Building...
-go build -ldflags "-X main.Version=%VERSION% -X main.BuildTime=%BUILD_DATE% %BUILD_TIME%" -o %BINARY_NAME%
+go build -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=%VERSION% -X github.com/sakuhanight/gopier/cmd.BuildTime=%BUILD_TIME_FULL%" -o %BINARY_NAME%
 if exist %BINARY_NAME% (
     for %%A in (%BINARY_NAME%) do set "SIZE=%%~zA"
     set /a "SIZE_MB=!SIZE!/1048576"
@@ -52,7 +53,7 @@ goto :end
 
 :release
 echo Building release version...
-go build -ldflags "-s -w -X main.Version=%VERSION% -X main.BuildTime=%BUILD_DATE% %BUILD_TIME%" -o %BINARY_NAME%
+go build -ldflags "-s -w -X github.com/sakuhanight/gopier/cmd.Version=%VERSION% -X github.com/sakuhanight/gopier/cmd.BuildTime=%BUILD_TIME_FULL%" -o %BINARY_NAME%
 if exist %BINARY_NAME% (
     for %%A in (%BINARY_NAME%) do set "SIZE=%%~zA"
     set /a "SIZE_MB=!SIZE!/1048576"
@@ -70,25 +71,25 @@ if not exist %BUILD_DIR% mkdir %BUILD_DIR%
 echo Windows AMD64...
 set "GOOS=windows"
 set "GOARCH=amd64"
-go build -ldflags "-X main.Version=%VERSION% -X main.BuildTime=%BUILD_DATE% %BUILD_TIME%" -o %BUILD_DIR%\gopier-windows-amd64.exe
+go build -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=%VERSION% -X github.com/sakuhanight/gopier/cmd.BuildTime=%BUILD_TIME_FULL%" -o %BUILD_DIR%\gopier-windows-amd64.exe
 if errorlevel 1 echo   ✗ Windows AMD64 build failed
 
 echo Linux AMD64...
 set "GOOS=linux"
 set "GOARCH=amd64"
-go build -ldflags "-X main.Version=%VERSION% -X main.BuildTime=%BUILD_DATE% %BUILD_TIME%" -o %BUILD_DIR%\gopier-linux-amd64
+go build -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=%VERSION% -X github.com/sakuhanight/gopier/cmd.BuildTime=%BUILD_TIME_FULL%" -o %BUILD_DIR%\gopier-linux-amd64
 if errorlevel 1 echo   ✗ Linux AMD64 build failed
 
 echo macOS AMD64...
 set "GOOS=darwin"
 set "GOARCH=amd64"
-go build -ldflags "-X main.Version=%VERSION% -X main.BuildTime=%BUILD_DATE% %BUILD_TIME%" -o %BUILD_DIR%\gopier-darwin-amd64
+go build -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=%VERSION% -X github.com/sakuhanight/gopier/cmd.BuildTime=%BUILD_TIME_FULL%" -o %BUILD_DIR%\gopier-darwin-amd64
 if errorlevel 1 echo   ✗ macOS AMD64 build failed
 
 echo macOS ARM64...
 set "GOOS=darwin"
 set "GOARCH=arm64"
-go build -ldflags "-X main.Version=%VERSION% -X main.BuildTime=%BUILD_DATE% %BUILD_TIME%" -o %BUILD_DIR%\gopier-darwin-arm64
+go build -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=%VERSION% -X github.com/sakuhanight/gopier/cmd.BuildTime=%BUILD_TIME_FULL%" -o %BUILD_DIR%\gopier-darwin-arm64
 if errorlevel 1 echo   ✗ macOS ARM64 build failed
 
 echo Cross-platform build complete
