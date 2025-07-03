@@ -160,11 +160,29 @@ function Test-Project {
     if (-not (Test-GoCommand)) { return }
     
     try {
-        go test -v ./...
+        Write-ColorOutput "通常テスト実行中..." "Yellow"
+        $result = go test -v ./...
+        if ($LASTEXITCODE -eq 0) {
+            Write-ColorOutput "通常テスト成功" "Green"
+        } else {
+            Write-ColorOutput "通常テスト失敗" "Red"
+            throw "通常テストが失敗しました"
+        }
+        
+        Write-ColorOutput "統合テスト実行中..." "Yellow"
+        $result = go test -v ./tests/...
+        if ($LASTEXITCODE -eq 0) {
+            Write-ColorOutput "統合テスト成功" "Green"
+        } else {
+            Write-ColorOutput "統合テスト失敗" "Red"
+            throw "統合テストが失敗しました"
+        }
+        
         Write-ColorOutput "テスト完了" "Green"
     }
     catch {
         Write-ColorOutput "テストエラー: $_" "Red"
+        exit 1
     }
 }
 
@@ -175,12 +193,38 @@ function Test-Coverage {
     if (-not (Test-GoCommand)) { return }
     
     try {
-        go test -v -coverprofile=coverage.out ./...
+        Write-ColorOutput "通常テストカバレッジ実行中..." "Yellow"
+        $result = go test -v -coverprofile=coverage.out ./...
+        if ($LASTEXITCODE -eq 0) {
+            Write-ColorOutput "通常テストカバレッジ成功" "Green"
+        } else {
+            Write-ColorOutput "通常テストカバレッジ失敗" "Red"
+            throw "通常テストカバレッジが失敗しました"
+        }
+        
+        Write-ColorOutput "統合テストカバレッジ実行中..." "Yellow"
+        $result = go test -v -coverprofile=coverage-integration.out ./tests/...
+        if ($LASTEXITCODE -eq 0) {
+            Write-ColorOutput "統合テストカバレッジ成功" "Green"
+        } else {
+            Write-ColorOutput "統合テストカバレッジ失敗" "Red"
+            throw "統合テストカバレッジが失敗しました"
+        }
+        
+        # カバレッジファイルをマージ
+        if (Test-Path "coverage.out" -and Test-Path "coverage-integration.out") {
+            $coverageContent = Get-Content "coverage.out"
+            $integrationContent = Get-Content "coverage-integration.out" | Select-Object -Skip 1
+            $coverageContent + $integrationContent | Set-Content "coverage.out"
+            Remove-Item "coverage-integration.out"
+        }
+        
         go tool cover -html=coverage.out -o coverage.html
         Write-ColorOutput "カバレッジレポート: coverage.html" "Green"
     }
     catch {
         Write-ColorOutput "カバレッジテストエラー: $_" "Red"
+        exit 1
     }
 }
 
