@@ -1125,3 +1125,603 @@ func BenchmarkVerifyAll_WithFilter(b *testing.B) {
 		}
 	}
 }
+
+// TestVerify_SingleFile は単一ファイル検証のテスト
+func TestVerify_SingleFile(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "source.txt")
+	destDir := filepath.Join(tempDir, "dest")
+	destFile := filepath.Join(destDir, "source.txt")
+
+	// テストファイルを作成
+	os.WriteFile(sourceFile, []byte("test content"), 0644)
+	os.MkdirAll(destDir, 0755)
+	os.WriteFile(destFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceFile, destDir, options, nil, nil)
+
+	// 単一ファイルの検証を直接テスト
+	result, err := verifier.verifyFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("単一ファイル検証が失敗: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("結果がnilです")
+	}
+
+	if !result.HashMatch {
+		t.Error("ハッシュが一致すべきです")
+	}
+}
+
+// TestVerifyFile_SourceNotExists はソースファイルが存在しない場合のテスト
+func TestVerifyFile_SourceNotExists(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "nonexistent.txt")
+	destFile := filepath.Join(tempDir, "dest.txt")
+
+	options := DefaultOptions()
+	verifier := NewVerifier("/source", "/dest", options, nil, nil)
+
+	result, err := verifier.verifyFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("エラーが発生すべきではありません: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("結果がnilです")
+	}
+
+	if result.SourceExists {
+		t.Error("ソースファイルは存在しないと判定されるべきです")
+	}
+
+	if result.Error == nil {
+		t.Error("エラーが設定されるべきです")
+	}
+}
+
+// TestVerifyFile_DestNotExists は宛先ファイルが存在しない場合のテスト
+func TestVerifyFile_DestNotExists(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "source.txt")
+	destFile := filepath.Join(tempDir, "nonexistent.txt")
+
+	// ソースファイルのみ作成
+	os.WriteFile(sourceFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(tempDir, "/dest", options, nil, nil)
+
+	result, err := verifier.verifyFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("エラーが発生すべきではありません: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("結果がnilです")
+	}
+
+	if result.DestExists {
+		t.Error("宛先ファイルは存在しないと判定されるべきです")
+	}
+
+	if result.Error == nil {
+		t.Error("エラーが設定されるべきです")
+	}
+}
+
+// TestVerifyFile_DestNotExistsWithIgnoreMissing はIgnoreMissingオプションのテスト
+func TestVerifyFile_DestNotExistsWithIgnoreMissing(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "source.txt")
+	destFile := filepath.Join(tempDir, "nonexistent.txt")
+
+	// ソースファイルのみ作成
+	os.WriteFile(sourceFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	options.IgnoreMissing = true
+	verifier := NewVerifier(tempDir, "/dest", options, nil, nil)
+
+	result, err := verifier.verifyFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("エラーが発生すべきではありません: %v", err)
+	}
+
+	if result != nil {
+		t.Error("結果はnilであるべきです（IgnoreMissingの場合）")
+	}
+}
+
+// TestVerifyFile_SizeMismatch はサイズ不一致のテスト
+func TestVerifyFile_SizeMismatch(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "source.txt")
+	destFile := filepath.Join(tempDir, "dest.txt")
+
+	// 異なるサイズのファイルを作成
+	os.WriteFile(sourceFile, []byte("test content"), 0644)
+	os.WriteFile(destFile, []byte("different content"), 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(tempDir, "/dest", options, nil, nil)
+
+	result, err := verifier.verifyFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("エラーが発生すべきではありません: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("結果がnilです")
+	}
+
+	if result.SizeMatch {
+		t.Error("サイズは一致しないと判定されるべきです")
+	}
+
+	if result.Error == nil {
+		t.Error("エラーが設定されるべきです")
+	}
+}
+
+// TestVerifyFile_HashMismatch はハッシュ不一致のテスト
+func TestVerifyFile_HashMismatch(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "source.txt")
+	destFile := filepath.Join(tempDir, "dest.txt")
+
+	// 同じサイズだが異なる内容のファイルを作成
+	os.WriteFile(sourceFile, []byte("test content 1"), 0644)
+	os.WriteFile(destFile, []byte("test content 2"), 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(tempDir, "/dest", options, nil, nil)
+
+	result, err := verifier.verifyFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("エラーが発生すべきではありません: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("結果がnilです")
+	}
+
+	if result.HashMatch {
+		t.Error("ハッシュは一致しないと判定されるべきです")
+	}
+
+	if result.Error == nil {
+		t.Error("エラーが設定されるべきです")
+	}
+}
+
+// TestVerifyFile_WithDatabase はデータベース連携のテスト
+func TestVerifyFile_WithDatabase(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "source.txt")
+	destFile := filepath.Join(tempDir, "dest.txt")
+
+	// テストファイルを作成
+	os.WriteFile(sourceFile, []byte("test content"), 0644)
+	os.WriteFile(destFile, []byte("test content"), 0644)
+
+	// データベースを作成
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成エラー: %v", err)
+	}
+	defer os.Remove(dbPath)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(tempDir, "/dest", options, nil, db)
+
+	result, err := verifier.verifyFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("エラーが発生すべきではありません: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("結果がnilです")
+	}
+
+	if !result.HashMatch {
+		t.Error("ハッシュが一致すべきです")
+	}
+}
+
+// TestCheckExtraFiles_Recursive は再帰的な余分ファイルチェックのテスト
+func TestCheckExtraFiles_Recursive(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+
+	// ソースディレクトリ構造を作成
+	os.MkdirAll(filepath.Join(sourceDir, "subdir"), 0755)
+	os.WriteFile(filepath.Join(sourceDir, "file1.txt"), []byte("content1"), 0644)
+	os.WriteFile(filepath.Join(sourceDir, "subdir", "file2.txt"), []byte("content2"), 0644)
+
+	// 宛先ディレクトリ構造を作成（余分なファイルを含む）
+	os.MkdirAll(filepath.Join(destDir, "subdir"), 0755)
+	os.WriteFile(filepath.Join(destDir, "file1.txt"), []byte("content1"), 0644)
+	os.WriteFile(filepath.Join(destDir, "extra.txt"), []byte("extra"), 0644) // 余分なファイル
+	os.WriteFile(filepath.Join(destDir, "subdir", "file2.txt"), []byte("content2"), 0644)
+	os.WriteFile(filepath.Join(destDir, "subdir", "extra2.txt"), []byte("extra2"), 0644) // 余分なファイル
+
+	options := DefaultOptions()
+	options.Recursive = true
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	err := verifier.checkExtraFiles(sourceDir, destDir)
+	if err != nil {
+		t.Errorf("余分ファイルチェックが失敗: %v", err)
+	}
+
+	results := verifier.GetResults()
+	if len(results) < 2 {
+		t.Errorf("期待される結果数: 2以上, 実際: %d", len(results))
+	}
+
+	// 余分なファイルが検出されているか確認
+	extraFound := false
+	for _, result := range results {
+		if strings.Contains(result.Path, "extra") {
+			extraFound = true
+			break
+		}
+	}
+
+	if !extraFound {
+		t.Error("余分なファイルが検出されていません")
+	}
+}
+
+// TestCheckExtraFiles_WithFilter はフィルタ付き余分ファイルチェックのテスト
+func TestCheckExtraFiles_WithFilter(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+
+	// ソースディレクトリを作成
+	os.MkdirAll(sourceDir, 0755)
+
+	// 宛先ディレクトリに余分なファイルを作成
+	os.MkdirAll(destDir, 0755)
+	os.WriteFile(filepath.Join(destDir, "extra.txt"), []byte("extra"), 0644) // フィルタに一致
+	os.WriteFile(filepath.Join(destDir, "extra.log"), []byte("extra"), 0644) // フィルタに一致しない
+
+	options := DefaultOptions()
+	fileFilter := filter.NewFilter("*.txt", "") // .txtファイルのみ含める
+	verifier := NewVerifier(sourceDir, destDir, options, fileFilter, nil)
+
+	err := verifier.checkExtraFiles(sourceDir, destDir)
+	if err != nil {
+		t.Errorf("余分ファイルチェックが失敗: %v", err)
+	}
+
+	results := verifier.GetResults()
+	if len(results) != 1 {
+		t.Errorf("期待される結果数: 1, 実際: %d", len(results))
+	}
+
+	if !strings.Contains(results[0].Path, "extra.txt") {
+		t.Error("フィルタに一致する余分ファイルが検出されていません")
+	}
+}
+
+// TestCheckExtraFiles_ExtraDirectory は余分なディレクトリのテスト
+func TestCheckExtraFiles_ExtraDirectory(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+
+	// ソースディレクトリを作成
+	os.MkdirAll(sourceDir, 0755)
+
+	// 宛先ディレクトリに余分なディレクトリを作成
+	os.MkdirAll(filepath.Join(destDir, "extra_dir"), 0755)
+	os.WriteFile(filepath.Join(destDir, "extra_dir", "file.txt"), []byte("content"), 0644)
+
+	options := DefaultOptions()
+	options.Recursive = true
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	err := verifier.checkExtraFiles(sourceDir, destDir)
+	if err != nil {
+		t.Errorf("余分ディレクトリチェックが失敗: %v", err)
+	}
+
+	results := verifier.GetResults()
+	if len(results) < 1 {
+		t.Error("余分なディレクトリが検出されていません")
+	}
+}
+
+// TestReportProgress_ChannelClosed は進捗報告のチャンネル閉じられケースのテスト
+func TestReportProgress_ChannelClosed(t *testing.T) {
+	options := DefaultOptions()
+	options.ProgressInterval = time.Millisecond * 10
+	verifier := NewVerifier("/source", "/dest", options, nil, nil)
+
+	// 進捗コールバックを設定
+	verifier.SetProgressCallback(func(current, total int64, currentFile string) {
+		// 何もしない
+	})
+
+	// 進捗チャンネルを閉じる
+	close(verifier.progressChan)
+
+	// 進捗報告を開始
+	go verifier.reportProgress()
+
+	// 少し待ってからキャンセル
+	time.Sleep(time.Millisecond * 50)
+	verifier.Cancel()
+
+	// 進捗報告が正常に終了することを確認
+	verifier.wg.Wait()
+}
+
+// TestGenerateReport_WriteError はレポート書き込みエラーのテスト
+func TestGenerateReport_WriteError(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 書き込み権限のないディレクトリを作成
+	readOnlyDir := filepath.Join(tempDir, "readonly")
+	os.MkdirAll(readOnlyDir, 0444) // 読み取り専用
+	reportPath := filepath.Join(readOnlyDir, "report.csv")
+
+	verifier := NewVerifier("/source", "/dest", DefaultOptions(), nil, nil)
+
+	// 結果を追加
+	result := VerificationResult{
+		Path:         "test.txt",
+		SourceExists: true,
+		DestExists:   true,
+		SizeMatch:    true,
+		HashMatch:    true,
+	}
+	verifier.addResult(result)
+
+	err := verifier.GenerateReport(reportPath)
+	if err == nil {
+		t.Error("書き込み権限がない場合、エラーが発生すべきです")
+		return
+	}
+	if !strings.Contains(err.Error(), "レポートファイル作成エラー") {
+		t.Errorf("期待されるエラーメッセージに'レポートファイル作成エラー'が含まれていません: %v", err)
+	}
+}
+
+// TestVerify_ContextCancel はコンテキストキャンセルのテスト
+func TestVerify_ContextCancel(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+
+	// テストディレクトリを作成
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+	os.WriteFile(filepath.Join(sourceDir, "test.txt"), []byte("content"), 0644)
+	os.WriteFile(filepath.Join(destDir, "test.txt"), []byte("content"), 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 検証を開始する前にキャンセル
+	verifier.Cancel()
+
+	err := verifier.Verify()
+	if err == nil {
+		t.Error("キャンセルされた場合、エラーが発生すべきです")
+		return
+	}
+	if !strings.Contains(err.Error(), "キャンセル") {
+		t.Errorf("期待されるエラーメッセージに'キャンセル'が含まれていません: %v", err)
+	}
+}
+
+// TestVerifyFile_ProgressChannelFull は進捗チャンネルが一杯の場合のテスト
+func TestVerifyFile_ProgressChannelFull(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "source.txt")
+	destFile := filepath.Join(tempDir, "dest.txt")
+
+	// テストファイルを作成
+	os.WriteFile(sourceFile, []byte("test content"), 0644)
+	os.WriteFile(destFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(tempDir, "/dest", options, nil, nil)
+
+	// 進捗チャンネルを一杯にする
+	for i := 0; i < 100; i++ {
+		select {
+		case verifier.progressChan <- "test":
+		default:
+			// チャンネルが一杯になったら停止
+			break
+		}
+	}
+
+	// 進捗コールバックを設定
+	verifier.SetProgressCallback(func(current, total int64, currentFile string) {
+		// 何もしない
+	})
+
+	result, err := verifier.verifyFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("エラーが発生すべきではありません: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("結果がnilです")
+	}
+
+	// 進捗チャンネルが一杯でも検証は正常に動作することを確認
+	if !result.HashMatch {
+		t.Error("ハッシュが一致すべきです")
+	}
+}
+
+// TestVerifyFile_FileInfoError はファイル情報取得エラーのテスト
+func TestVerifyFile_FileInfoError(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "source.txt")
+	destFile := filepath.Join(tempDir, "dest.txt")
+
+	// テストファイルを作成
+	os.WriteFile(sourceFile, []byte("test content"), 0644)
+	os.WriteFile(destFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(tempDir, "/dest", options, nil, nil)
+
+	// ファイルを削除してファイル情報取得エラーを発生させる
+	os.Remove(sourceFile)
+
+	result, err := verifier.verifyFile(sourceFile, destFile)
+	if err != nil {
+		t.Errorf("エラーが発生すべきではありません: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("結果がnilです")
+	}
+
+	if result.SourceExists {
+		t.Error("ソースファイルは存在しないと判定されるべきです")
+	}
+
+	if result.Error == nil {
+		t.Error("エラーが設定されるべきです")
+	}
+}
+
+// TestVerifyDirectory_ReadDirError はディレクトリ読み込みエラーのテスト
+func TestVerifyDirectory_ReadDirError(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+
+	// ソースディレクトリを作成
+	os.MkdirAll(sourceDir, 0755)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// ソースディレクトリを削除して読み込みエラーを発生させる
+	os.RemoveAll(sourceDir)
+
+	err := verifier.verifyDirectory(sourceDir, destDir)
+	if err == nil {
+		t.Error("ディレクトリ読み込みエラーが発生すべきです")
+	}
+
+	if !strings.Contains(err.Error(), "ディレクトリ読み込みエラー") {
+		t.Errorf("期待されるエラーメッセージに'ディレクトリ読み込みエラー'が含まれていません: %v", err)
+	}
+}
+
+// TestCheckExtraFiles_ReadDirError は余分ファイルチェックのディレクトリ読み込みエラーテスト
+func TestCheckExtraFiles_ReadDirError(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+
+	// ソースディレクトリを作成
+	os.MkdirAll(sourceDir, 0755)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 宛先ディレクトリを削除して読み込みエラーを発生させる
+	os.RemoveAll(destDir)
+
+	err := verifier.checkExtraFiles(sourceDir, destDir)
+	if err == nil {
+		t.Error("ディレクトリ読み込みエラーが発生すべきです")
+	}
+
+	if !strings.Contains(err.Error(), "宛先ディレクトリ読み込みエラー") {
+		t.Errorf("期待されるエラーメッセージに'宛先ディレクトリ読み込みエラー'が含まれていません: %v", err)
+	}
+}
+
+// TestGenerateReport_HeaderWriteError はレポートヘッダー書き込みエラーのテスト
+func TestGenerateReport_HeaderWriteError(t *testing.T) {
+	tempDir := t.TempDir()
+	reportPath := filepath.Join(tempDir, "report.csv")
+
+	verifier := NewVerifier("/source", "/dest", DefaultOptions(), nil, nil)
+
+	// 結果を追加
+	result := VerificationResult{
+		Path:         "test.txt",
+		SourceExists: true,
+		DestExists:   true,
+		SizeMatch:    true,
+		HashMatch:    true,
+	}
+	verifier.addResult(result)
+
+	// ファイルを作成して書き込み権限を削除
+	file, _ := os.Create(reportPath)
+	file.Close()
+	os.Chmod(reportPath, 0444) // 読み取り専用
+
+	err := verifier.GenerateReport(reportPath)
+	if err == nil {
+		t.Error("書き込み権限がない場合、エラーが発生すべきです")
+	}
+
+	// 権限を元に戻す
+	os.Chmod(reportPath, 0644)
+}
+
+// TestVerify_SessionError は同期セッションエラーのテスト
+func TestVerify_SessionError(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+
+	// テストディレクトリを作成
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+	os.WriteFile(filepath.Join(sourceDir, "test.txt"), []byte("content"), 0644)
+	os.WriteFile(filepath.Join(destDir, "test.txt"), []byte("content"), 0644)
+
+	// データベースファイルを作成して書き込み権限を削除
+	dbPath := filepath.Join(tempDir, "test.db")
+	file, err := os.Create(dbPath)
+	if err != nil {
+		t.Fatal("データベースファイルの作成に失敗しました")
+	}
+	file.Close()
+	os.Chmod(dbPath, 0444) // 読み取り専用
+
+	// データベースを作成（エラーが発生するはず）
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		// データベース作成エラーが発生した場合、テストをスキップ
+		t.Skip("データベース作成エラーが発生したため、テストをスキップします")
+	}
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, db)
+
+	err = verifier.Verify()
+	if err == nil {
+		t.Error("無効なデータベースパスの場合、エラーが発生すべきです")
+		return
+	}
+	if !strings.Contains(err.Error(), "同期セッション開始エラー") {
+		t.Errorf("期待されるエラーメッセージに'同期セッション開始エラー'が含まれていません: %v", err)
+	}
+
+	// 権限を元に戻す
+	os.Chmod(dbPath, 0644)
+}

@@ -155,6 +155,13 @@ func (v *Verifier) addResult(result VerificationResult) {
 
 // Verify はファイルの検証を行う
 func (v *Verifier) Verify() error {
+	// コンテキストのキャンセル確認
+	select {
+	case <-v.ctx.Done():
+		return fmt.Errorf("検証処理がキャンセルされました")
+	default:
+	}
+
 	// 同期セッションの開始
 	var sessionID int64
 	var err error
