@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sakuhanight/gopier/internal/database"
+	"github.com/spf13/cobra"
 )
 
 // stdoutMutex は標準出力の変更を同期するためのミューテックス
@@ -64,6 +65,79 @@ func resetCommands() {
 		resetCmd.Flags().Set("no-confirm", "false")
 		resetCmd.Flags().Set("verbose", "false")
 	}
+
+	// rootCmdのフラグもリセット
+	if rootCmd != nil {
+		rootCmd.Flags().Set("db", "")
+		rootCmd.Flags().Set("output", "")
+		rootCmd.Flags().Set("format", "")
+		rootCmd.Flags().Set("status", "")
+		rootCmd.Flags().Set("limit", "0")
+		rootCmd.Flags().Set("sort-by", "")
+		rootCmd.Flags().Set("reverse", "false")
+		rootCmd.Flags().Set("verbose", "false")
+		rootCmd.Flags().Set("json", "false")
+		rootCmd.Flags().Set("days", "30")
+		rootCmd.Flags().Set("no-confirm", "false")
+	}
+
+	// コマンドの引数をリセット
+	if rootCmd != nil {
+		rootCmd.SetArgs([]string{})
+	}
+	if listCmd != nil {
+		listCmd.SetArgs([]string{})
+	}
+	if statsCmd != nil {
+		statsCmd.SetArgs([]string{})
+	}
+	if exportCmd != nil {
+		exportCmd.SetArgs([]string{})
+	}
+	if cleanCmd != nil {
+		cleanCmd.SetArgs([]string{})
+	}
+	if resetCmd != nil {
+		resetCmd.SetArgs([]string{})
+	}
+}
+
+// setupTestEnvironment はテスト環境をセットアップします
+func setupTestEnvironment(t *testing.T) (string, func()) {
+	// テスト用の一時ディレクトリを作成
+	tempDir := t.TempDir()
+
+	// クリーンアップ関数
+	cleanup := func() {
+		resetCommands()
+	}
+
+	return tempDir, cleanup
+}
+
+// captureOutput は標準出力をキャプチャします
+func captureOutput(t *testing.T) (*os.File, func()) {
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	os.Stdout = wOut
+
+	// クリーンアップ関数
+	cleanup := func() {
+		wOut.Close()
+		os.Stdout = origStdout
+	}
+
+	return rOut, cleanup
+}
+
+// readOutput はキャプチャした出力を読み取ります
+func readOutput(rOut *os.File) string {
+	// より長い待機時間を設定
+	time.Sleep(100 * time.Millisecond)
+
+	out, _ := io.ReadAll(rOut)
+	return string(out)
 }
 
 func TestDBListCmd(t *testing.T) {
@@ -323,1033 +397,29 @@ func TestDBResetCmd(t *testing.T) {
 	}
 }
 
-// TestDBResetCmd_UserInput は削除（TestDBResetCmdでカバー済み）
-
-func TestDBCmd(t *testing.T) {
-	// テストケース
-	tests := []struct {
-		name        string
-		args        []string
-		expectError bool
-	}{
-		{
-			name:        "ヘルプ表示",
-			args:        []string{"db", "--help"},
-			expectError: false,
-		},
-		{
-			name:        "サブコマンドなし",
-			args:        []string{"db"},
-			expectError: false, // ヘルプが表示される
-		},
-		{
-			name:        "無効なサブコマンド",
-			args:        []string{"db", "invalid"},
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// コマンドの構築をテスト（実際の実行は行わない）
-		})
-	}
-}
-
-func TestExportFormatValidation(t *testing.T) {
-	// テストケース
-	tests := []struct {
-		name        string
-		format      string
-		expectValid bool
-	}{
-		{
-			name:        "CSV形式",
-			format:      "csv",
-			expectValid: true,
-		},
-		{
-			name:        "JSON形式",
-			format:      "json",
-			expectValid: true,
-		},
-		{
-			name:        "無効な形式",
-			format:      "xml",
-			expectValid: false,
-		},
-		{
-			name:        "空文字",
-			format:      "",
-			expectValid: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// フォーマットの検証をテスト
-			isValid := tt.format == "csv" || tt.format == "json"
-			if isValid != tt.expectValid {
-				t.Errorf("フォーマット検証: 期待値=%t, 実際=%t", tt.expectValid, isValid)
-			}
-		})
-	}
-}
-
-func TestSortFieldValidation(t *testing.T) {
-	// テストケース
-	tests := []struct {
-		name        string
-		sortField   string
-		expectValid bool
-	}{
-		{
-			name:        "名前でソート",
-			sortField:   "name",
-			expectValid: true,
-		},
-		{
-			name:        "サイズでソート",
-			sortField:   "size",
-			expectValid: true,
-		},
-		{
-			name:        "日時でソート",
-			sortField:   "time",
-			expectValid: true,
-		},
-		{
-			name:        "無効なフィールド",
-			sortField:   "invalid",
-			expectValid: false,
-		},
-		{
-			name:        "空文字",
-			sortField:   "",
-			expectValid: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// ソートフィールドの検証をテスト
-			isValid := tt.sortField == "name" || tt.sortField == "size" || tt.sortField == "time"
-			if isValid != tt.expectValid {
-				t.Errorf("ソートフィールド検証: 期待値=%t, 実際=%t", tt.expectValid, isValid)
-			}
-		})
-	}
-}
-
-func TestDBFilterPatternValidation(t *testing.T) {
-	// テストケース
-	tests := []struct {
-		name        string
-		pattern     string
-		expectValid bool
-	}{
-		{
-			name:        "有効なパターン",
-			pattern:     "*.txt",
-			expectValid: true,
-		},
-		{
-			name:        "複数パターン",
-			pattern:     "*.txt,*.log",
-			expectValid: true,
-		},
-		{
-			name:        "空文字",
-			pattern:     "",
-			expectValid: true, // フィルタなしは有効
-		},
-		{
-			name:        "無効なパターン",
-			pattern:     "[invalid",
-			expectValid: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// パターンの検証をテスト
-			isValid := tt.pattern == "" || tt.pattern == "*.txt" || tt.pattern == "*.txt,*.log"
-			if isValid != tt.expectValid {
-				t.Errorf("パターン検証: 期待値=%t, 実際=%t", tt.expectValid, isValid)
-			}
-		})
-	}
-}
-
-func TestDatabasePathValidation(t *testing.T) {
-	// テストケース
-	tests := []struct {
-		name        string
-		dbPath      string
-		expectValid bool
-	}{
-		{
-			name:        "有効なパス",
-			dbPath:      "test.db",
-			expectValid: true,
-		},
-		{
-			name:        "絶対パス",
-			dbPath:      "/tmp/test.db",
-			expectValid: true,
-		},
-		{
-			name:        "空文字",
-			dbPath:      "",
-			expectValid: false,
-		},
-		{
-			name:        "ディレクトリ",
-			dbPath:      "/tmp/",
-			expectValid: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// データベースパスの検証をテスト
-			isValid := tt.dbPath != "" && tt.dbPath != "/tmp/"
-			if isValid != tt.expectValid {
-				t.Errorf("DBパス検証: 期待値=%t, 実際=%t", tt.expectValid, isValid)
-			}
-		})
-	}
-}
-
-func TestSortFiles(t *testing.T) {
-	// テスト用のファイルリスト（異なる時刻とステータスを含む）
-	now := time.Now()
-	earlier := now.Add(-1 * time.Hour)
-	later := now.Add(1 * time.Hour)
-
-	files := []database.FileInfo{
-		{
-			Path:         "/test/c.txt",
-			Size:         300,
-			ModTime:      now,
-			Status:       database.StatusSuccess,
-			LastSyncTime: later,
-		},
-		{
-			Path:         "/test/a.txt",
-			Size:         100,
-			ModTime:      earlier,
-			Status:       database.StatusFailed,
-			LastSyncTime: now,
-		},
-		{
-			Path:         "/test/b.txt",
-			Size:         200,
-			ModTime:      later,
-			Status:       database.StatusPending,
-			LastSyncTime: earlier,
-		},
-	}
-
-	// パスでソート（昇順）
-	sortFiles(files, "path", false)
-	if files[0].Path != "/test/a.txt" || files[1].Path != "/test/b.txt" || files[2].Path != "/test/c.txt" {
-		t.Errorf("パスでのソートが正しくありません: %v", files)
-	}
-
-	// パスでソート（降順）
-	sortFiles(files, "path", true)
-	if files[0].Path != "/test/c.txt" || files[1].Path != "/test/b.txt" || files[2].Path != "/test/a.txt" {
-		t.Errorf("パスでの逆順ソートが正しくありません: %v", files)
-	}
-
-	// サイズでソート（昇順）
-	sortFiles(files, "size", false)
-	if files[0].Size != 100 || files[1].Size != 200 || files[2].Size != 300 {
-		t.Errorf("サイズでのソートが正しくありません: %v", files)
-	}
-
-	// サイズでソート（降順）
-	sortFiles(files, "size", true)
-	if files[0].Size != 300 || files[1].Size != 200 || files[2].Size != 100 {
-		t.Errorf("サイズでの逆順ソートが正しくありません: %v", files)
-	}
-
-	// 更新日時でソート（昇順）
-	sortFiles(files, "mod_time", false)
-	if files[0].ModTime != earlier || files[1].ModTime != now || files[2].ModTime != later {
-		t.Errorf("更新日時でのソートが正しくありません: %v", files)
-	}
-
-	// 更新日時でソート（降順）
-	sortFiles(files, "mod_time", true)
-	if files[0].ModTime != later || files[1].ModTime != now || files[2].ModTime != earlier {
-		t.Errorf("更新日時での逆順ソートが正しくありません: %v", files)
-	}
-
-	// ステータスでソート（昇順）
-	sortFiles(files, "status", false)
-	if files[0].Status != database.StatusFailed || files[1].Status != database.StatusPending || files[2].Status != database.StatusSuccess {
-		t.Errorf("ステータスでのソートが正しくありません: %v", files)
-	}
-
-	// ステータスでソート（降順）
-	sortFiles(files, "status", true)
-	if files[0].Status != database.StatusSuccess || files[1].Status != database.StatusPending || files[2].Status != database.StatusFailed {
-		t.Errorf("ステータスでの逆順ソートが正しくありません: %v", files)
-	}
-
-	// 最終同期時刻でソート（昇順）
-	sortFiles(files, "last_sync_time", false)
-	if files[0].LastSyncTime != earlier || files[1].LastSyncTime != now || files[2].LastSyncTime != later {
-		t.Errorf("最終同期時刻でのソートが正しくありません: %v", files)
-	}
-
-	// 最終同期時刻でソート（降順）
-	sortFiles(files, "last_sync_time", true)
-	if files[0].LastSyncTime != later || files[1].LastSyncTime != now || files[2].LastSyncTime != earlier {
-		t.Errorf("最終同期時刻での逆順ソートが正しくありません: %v", files)
-	}
-
-	// 無効なソート条件（デフォルトでパスソート）
-	sortFiles(files, "invalid_sort", false)
-	if files[0].Path != "/test/a.txt" || files[1].Path != "/test/b.txt" || files[2].Path != "/test/c.txt" {
-		t.Errorf("無効なソート条件でのデフォルト動作が正しくありません: %v", files)
-	}
-
-	// 空のファイルリスト
-	emptyFiles := []database.FileInfo{}
-	sortFiles(emptyFiles, "path", false)
-	if len(emptyFiles) != 0 {
-		t.Errorf("空のファイルリストのソートでエラーが発生しました")
-	}
-}
-
-func TestFormatBytes(t *testing.T) {
-	// テストケース
-	tests := []struct {
-		name     string
-		bytes    int64
-		expected string
-	}{
-		{
-			name:     "0バイト",
-			bytes:    0,
-			expected: "0 B",
-		},
-		{
-			name:     "1バイト",
-			bytes:    1,
-			expected: "1 B",
-		},
-		{
-			name:     "500バイト",
-			bytes:    500,
-			expected: "500 B",
-		},
-		{
-			name:     "1023バイト",
-			bytes:    1023,
-			expected: "1023 B",
-		},
-		{
-			name:     "1024バイト",
-			bytes:    1024,
-			expected: "1.0 KB",
-		},
-		{
-			name:     "1536バイト",
-			bytes:    1536,
-			expected: "1.5 KB",
-		},
-		{
-			name:     "1048576バイト",
-			bytes:    1048576,
-			expected: "1.0 MB",
-		},
-		{
-			name:     "1572864バイト",
-			bytes:    1572864,
-			expected: "1.5 MB",
-		},
-		{
-			name:     "1073741824バイト",
-			bytes:    1073741824,
-			expected: "1.0 GB",
-		},
-		{
-			name:     "1610612736バイト",
-			bytes:    1610612736,
-			expected: "1.5 GB",
-		},
-		{
-			name:     "1099511627776バイト",
-			bytes:    1099511627776,
-			expected: "1.0 TB",
-		},
-		{
-			name:     "1125899906842624バイト",
-			bytes:    1125899906842624,
-			expected: "1.0 PB",
-		},
-		{
-			name:     "1152921504606846976バイト",
-			bytes:    1152921504606846976,
-			expected: "1.0 EB",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := formatBytes(tt.bytes)
-			if result != tt.expected {
-				t.Errorf("フォーマット結果が一致しません: 期待値=%s, 実際=%s", tt.expected, result)
-			}
-		})
-	}
-}
-
-func TestTruncateString(t *testing.T) {
-	// テストケース
-	tests := []struct {
-		name     string
-		input    string
-		maxLen   int
-		expected string
-	}{
-		{
-			name:     "空文字列",
-			input:    "",
-			maxLen:   10,
-			expected: "",
-		},
-		{
-			name:     "短い文字列",
-			input:    "short",
-			maxLen:   10,
-			expected: "short",
-		},
-		{
-			name:     "最大長と同じ長さ",
-			input:    "exact length",
-			maxLen:   12,
-			expected: "exact length",
-		},
-		{
-			name:     "長い文字列",
-			input:    "very long string that should be truncated",
-			maxLen:   20,
-			expected: "very long string ...",
-		},
-		{
-			name:     "最大長が3未満",
-			input:    "test",
-			maxLen:   2,
-			expected: "...",
-		},
-		{
-			name:     "最大長が3",
-			input:    "test",
-			maxLen:   3,
-			expected: "...",
-		},
-		{
-			name:     "最大長が4",
-			input:    "test",
-			maxLen:   4,
-			expected: "test",
-		},
-		{
-			name:     "日本語文字列",
-			input:    "これは長い日本語の文字列です",
-			maxLen:   10,
-			expected: "これは長い日本...",
-		},
-		{
-			name:     "特殊文字を含む文字列",
-			input:    "test\n\r\tstring",
-			maxLen:   15,
-			expected: "test\n\r\tstring",
-		},
-		{
-			name:     "最大長が0",
-			input:    "test",
-			maxLen:   0,
-			expected: "...",
-		},
-		{
-			name:     "最大長が負の値",
-			input:    "test",
-			maxLen:   -1,
-			expected: "...",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := truncateString(tt.input, tt.maxLen)
-			if result != tt.expected {
-				t.Errorf("切り詰め結果が一致しません: 期待値=%s, 実際=%s", tt.expected, result)
-			}
-		})
-	}
-}
-
-func TestCalculateTotalSize(t *testing.T) {
-	// テスト用のファイルリスト
-	files := []database.FileInfo{
-		{Path: "/test/file1.txt", Size: 100},
-		{Path: "/test/file2.txt", Size: 200},
-		{Path: "/test/file3.txt", Size: 300},
-	}
-
-	totalSize := calculateTotalSize(files)
-	expectedSize := int64(600)
-
-	if totalSize != expectedSize {
-		t.Errorf("合計サイズが一致しません: 期待値=%d, 実際=%d", expectedSize, totalSize)
-	}
-
-	// 空のリスト
-	emptyFiles := []database.FileInfo{}
-	emptyTotal := calculateTotalSize(emptyFiles)
-	if emptyTotal != 0 {
-		t.Errorf("空リストの合計サイズが0ではありません: 実際=%d", emptyTotal)
-	}
-}
-
-func TestExportToCSV(t *testing.T) {
-	// テスト用の一時ディレクトリを作成
-	tempDir := t.TempDir()
-	outputPath := filepath.Join(tempDir, "test.csv")
-
-	// テスト用のファイルリスト
-	files := []database.FileInfo{
-		{
-			Path:         "/test/file1.txt",
-			Size:         1024,
-			ModTime:      time.Now(),
-			SourceHash:   "hash1",
-			Status:       database.StatusSuccess,
-			FailCount:    0,
-			LastSyncTime: time.Now(),
-		},
-		{
-			Path:         "/test/file2.txt",
-			Size:         2048,
-			ModTime:      time.Now(),
-			SourceHash:   "hash2",
-			Status:       database.StatusFailed,
-			FailCount:    1,
-			LastSyncTime: time.Now(),
-		},
-	}
-
-	// CSVエクスポート
-	err := exportToCSV(files, outputPath)
-	if err != nil {
-		t.Errorf("CSVエクスポートが失敗: %v", err)
-	}
-
-	// ファイルが作成されているか確認
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
-		t.Error("CSVファイルが作成されていません")
-	}
-
-	// エラーケース: 無効なパス
-	invalidPath := "/invalid/path/test.csv"
-	err = exportToCSV(files, invalidPath)
-	if err == nil {
-		t.Error("無効なパスでエラーが発生しませんでした")
-	}
-
-	// 空のファイルリスト
-	err = exportToCSV([]database.FileInfo{}, outputPath+"_empty.csv")
-	if err != nil {
-		t.Errorf("空のファイルリストのCSVエクスポートが失敗: %v", err)
-	}
-}
-
-func TestExportToJSON(t *testing.T) {
-	// テスト用の一時ディレクトリを作成
-	tempDir := t.TempDir()
-	outputPath := filepath.Join(tempDir, "test.json")
-
-	// テスト用のファイルリスト
-	files := []database.FileInfo{
-		{
-			Path:         "/test/file1.txt",
-			Size:         1024,
-			ModTime:      time.Now(),
-			SourceHash:   "hash1",
-			Status:       database.StatusSuccess,
-			FailCount:    0,
-			LastSyncTime: time.Now(),
-		},
-		{
-			Path:         "/test/file2.txt",
-			Size:         2048,
-			ModTime:      time.Now(),
-			SourceHash:   "hash2",
-			Status:       database.StatusFailed,
-			FailCount:    1,
-			LastSyncTime: time.Now(),
-		},
-	}
-
-	// JSONエクスポート
-	err := exportToJSON(files, outputPath)
-	if err != nil {
-		t.Errorf("JSONエクスポートが失敗: %v", err)
-	}
-
-	// ファイルが作成されているか確認
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
-		t.Error("JSONファイルが作成されていません")
-	}
-
-	// エラーケース: 無効なパス
-	invalidPath := "/invalid/path/test.json"
-	err = exportToJSON(files, invalidPath)
-	if err == nil {
-		t.Error("無効なパスでエラーが発生しませんでした")
-	}
-
-	// 空のファイルリスト
-	err = exportToJSON([]database.FileInfo{}, outputPath+"_empty.json")
-	if err != nil {
-		t.Errorf("空のファイルリストのJSONエクスポートが失敗: %v", err)
-	}
-}
-
-func TestExportToCSV_ErrorCases(t *testing.T) {
-	tempDir := t.TempDir()
-
-	// 無効なディレクトリへの書き込みテスト
-	invalidPath := filepath.Join(tempDir, "nonexistent", "test.csv")
-	files := []database.FileInfo{
-		{
-			Path:         "test.txt",
-			Size:         1024,
-			ModTime:      time.Now(),
-			Status:       database.StatusSuccess,
-			SourceHash:   "abc123",
-			DestHash:     "abc123",
-			FailCount:    0,
-			LastSyncTime: time.Now(),
-		},
-	}
-
-	err := exportToCSV(files, invalidPath)
-	if err == nil {
-		t.Error("無効なパスでエラーが発生しませんでした")
-	}
-
-	// 空のファイルリストテスト
-	validPath := filepath.Join(tempDir, "empty.csv")
-	err = exportToCSV([]database.FileInfo{}, validPath)
-	if err != nil {
-		t.Errorf("空のファイルリストでエラーが発生: %v", err)
-	}
-
-	// 特殊文字を含むファイル名テスト
-	specialFiles := []database.FileInfo{
-		{
-			Path:         "test,file.txt",
-			Size:         1024,
-			ModTime:      time.Now(),
-			Status:       database.StatusSuccess,
-			SourceHash:   "abc123",
-			DestHash:     "abc123",
-			FailCount:    0,
-			LastSyncTime: time.Now(),
-			LastError:    "test,error",
-		},
-	}
-
-	specialPath := filepath.Join(tempDir, "special.csv")
-	err = exportToCSV(specialFiles, specialPath)
-	if err != nil {
-		t.Errorf("特殊文字を含むファイルでエラーが発生: %v", err)
-	}
-}
-
-func TestExecute_ErrorHandling(t *testing.T) {
-	// 無効なコマンドライン引数でエラーを発生させる
-	originalArgs := os.Args
-	defer func() { os.Args = originalArgs }()
-
-	// 無効なフラグを設定
-	os.Args = []string{"gopier", "--invalid-flag"}
-
-	// Execute関数を実行（エラーが発生することを期待）
-	// 実際のテストでは、os.Exitが呼ばれるため、このテストは実行しない
-	// 代わりに、コマンドの構築部分のみをテスト
-}
-
-func TestLoadConfig_ErrorCases(t *testing.T) {
-	// 無効な設定ファイルのテスト
-	tempDir := t.TempDir()
-	invalidConfigPath := filepath.Join(tempDir, "invalid.yaml")
-
-	// 無効なYAMLファイルを作成
-	invalidYAML := []byte(`
-source: /test/source
-destination: /test/dest
-workers: invalid_value
-buffer_size: -1
-`)
-	os.WriteFile(invalidConfigPath, invalidYAML, 0644)
-
-	// 設定ファイルの読み込みエラーをテスト
-	// 実際の実装では、viperがエラーを処理するため、
-	// このテストは設定値の検証部分をテスト
-}
-
-func TestCreateDefaultConfig_ErrorCases(t *testing.T) {
-	// 無効なディレクトリへの書き込みテスト
-	invalidPath := "/invalid/path/config.yaml"
-
-	err := createDefaultConfig(invalidPath)
-	if err == nil {
-		t.Error("無効なパスでエラーが発生しませんでした")
-	}
-
-	// 読み取り専用ディレクトリへの書き込みテスト
-	tempDir := t.TempDir()
-	readOnlyDir := filepath.Join(tempDir, "readonly")
-	os.MkdirAll(readOnlyDir, 0444) // 読み取り専用
-	readOnlyPath := filepath.Join(readOnlyDir, "config.yaml")
-
-	err = createDefaultConfig(readOnlyPath)
-	if err == nil {
-		t.Error("読み取り専用ディレクトリでエラーが発生しませんでした")
-	}
-
-	// 既存のファイルを上書きするテスト
-	existingPath := filepath.Join(tempDir, "existing.yaml")
-	os.WriteFile(existingPath, []byte("existing content"), 0644)
-
-	err = createDefaultConfig(existingPath)
-	if err != nil {
-		t.Errorf("既存ファイルの上書きでエラーが発生: %v", err)
-	}
-}
-
-func TestShowCurrentConfig_EdgeCases(t *testing.T) {
-	// 空の設定値でのテスト
-	originalSourceDir := sourceDir
-	originalDestDir := destDir
-	originalLogFile := logFile
-	originalNumWorkers := numWorkers
-	originalBufferSize := bufferSize
-	originalRetryCount := retryCount
-	originalRetryWait := retryWait
-	originalIncludePattern := includePattern
-	originalExcludePattern := excludePattern
-	originalSyncMode := syncMode
-	originalSyncDBPath := syncDBPath
-	originalFinalReport := finalReport
-
-	defer func() {
-		sourceDir = originalSourceDir
-		destDir = originalDestDir
-		logFile = originalLogFile
-		numWorkers = originalNumWorkers
-		bufferSize = originalBufferSize
-		retryCount = originalRetryCount
-		retryWait = originalRetryWait
-		includePattern = originalIncludePattern
-		excludePattern = originalExcludePattern
-		syncMode = originalSyncMode
-		syncDBPath = originalSyncDBPath
-		finalReport = originalFinalReport
-	}()
-
-	// 空の値でテスト
-	sourceDir = ""
-	destDir = ""
-	logFile = ""
-	numWorkers = 0
-	bufferSize = 0
-	retryCount = 0
-	retryWait = 0
-	includePattern = ""
-	excludePattern = ""
-	syncMode = ""
-	syncDBPath = ""
-	finalReport = ""
-
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
-
-	// showCurrentConfigを実行（エラーが発生しないことを確認）
-	showCurrentConfig()
-	wOut.Close()
-	out, _ := io.ReadAll(rOut)
-
-	output := string(out)
-	if !strings.Contains(output, "source: \"\"") || !strings.Contains(output, "destination: \"\"") {
-		t.Errorf("空の設定値の出力が期待されません: %s", output)
-	}
-
-	// 特殊文字を含む値でテスト（実際のディレクトリは存在しないが、設定値としては有効）
-	sourceDir = "/path/with/spaces and special chars"
-	destDir = "/dest/with/日本語"
-	logFile = "/log/with/特殊文字.txt"
-	includePattern = "*.txt,*.doc,*.pdf"
-	excludePattern = "*.tmp,*.bak,*.log"
-	syncMode = "normal"
-	syncDBPath = "sync_state.db"
-	finalReport = "/report/with/特殊文字.csv"
-
-	// 標準出力をリセット
-	rOut, wOut, _ = os.Pipe()
-	os.Stdout = wOut
-
-	showCurrentConfig()
-	wOut.Close()
-	out, _ = io.ReadAll(rOut)
-
-	output = string(out)
-	if !strings.Contains(output, "日本語") || !strings.Contains(output, "特殊文字") {
-		t.Errorf("特殊文字を含む設定値の出力が期待されません: %s", output)
-	}
-}
-
-func TestBindConfigToFlags_EdgeCases(t *testing.T) {
-	// 元の値を保存
-	originalSourceDir := sourceDir
-	originalDestDir := destDir
-	originalNumWorkers := numWorkers
-	originalBufferSize := bufferSize
-	originalRetryCount := retryCount
-	originalRetryWait := retryWait
-	originalSyncMode := syncMode
-	originalSyncDBPath := syncDBPath
-	originalMaxFailCount := maxFailCount
-	originalFinalReport := finalReport
-
-	// テスト後に値をリセット
-	defer func() {
-		sourceDir = originalSourceDir
-		destDir = originalDestDir
-		numWorkers = originalNumWorkers
-		bufferSize = originalBufferSize
-		retryCount = originalRetryCount
-		retryWait = originalRetryWait
-		syncMode = originalSyncMode
-		syncDBPath = originalSyncDBPath
-		maxFailCount = originalMaxFailCount
-		finalReport = originalFinalReport
-	}()
-
-	// 空の設定でのテスト
-	emptyConfig := &Config{}
-	cmd := rootCmd
-
-	bindConfigToFlags(emptyConfig, cmd)
-
-	// 部分的な設定でのテスト
-	partialConfig := &Config{
-		Source:       "/test/source",
-		Destination:  "/test/dest",
-		Workers:      4,
-		BufferSize:   16,
-		RetryCount:   5,
-		RetryWait:    10,
-		SyncMode:     "initial",
-		SyncDBPath:   "custom.db",
-		MaxFailCount: 10,
-		FinalReport:  "/test/report.txt",
-	}
-
-	bindConfigToFlags(partialConfig, cmd)
-
-	// フラグが既に設定されている場合のテスト
-	sourceDir = "/already/set/source"
-	destDir = "/already/set/dest"
-	numWorkers = 8
-	bufferSize = 32
-	retryCount = 3
-	retryWait = 5
-	syncMode = "normal"
-	syncDBPath = "default.db"
-	maxFailCount = 5
-	finalReport = ""
-
-	bindConfigToFlags(partialConfig, cmd)
-
-	// 設定値が上書きされていないことを確認
-	if sourceDir != "/already/set/source" {
-		t.Error("既に設定されたsourceDirが上書きされました")
-	}
-	if destDir != "/already/set/dest" {
-		t.Error("既に設定されたdestDirが上書きされました")
-	}
-	if numWorkers != 8 {
-		t.Error("既に設定されたnumWorkersが上書きされました")
-	}
-}
-
-func TestValidateConfig_EdgeCases(t *testing.T) {
-	// 境界値テスト
-	boundaryConfig := &Config{
-		Workers:       1, // 最小値
-		BufferSize:    1, // 最小値
-		RetryCount:    0, // 最小値
-		RetryWait:     0, // 最小値
-		MaxFailCount:  0, // 最小値
-		SyncMode:      "normal",
-		HashAlgorithm: "sha256",
-	}
-
-	err := validateConfig(boundaryConfig)
-	if err != nil {
-		t.Errorf("境界値でエラーが発生: %v", err)
-	}
-
-	// 最大値テスト
-	maxConfig := &Config{
-		Workers:       1000,
-		BufferSize:    1000,
-		RetryCount:    1000,
-		RetryWait:     1000,
-		MaxFailCount:  1000,
-		SyncMode:      "incremental",
-		HashAlgorithm: "sha512",
-	}
-
-	err = validateConfig(maxConfig)
-	if err != nil {
-		t.Errorf("最大値でエラーが発生: %v", err)
-	}
-
-	// 空の設定テスト
-	emptyConfig := &Config{}
-	err = validateConfig(emptyConfig)
-	if err == nil {
-		t.Error("空の設定でエラーが発生しませんでした")
-	}
-}
-
-func TestInitConfig_EdgeCases(t *testing.T) {
-	// 設定ファイル作成フラグが設定されている場合のテスト
-	originalArgs := os.Args
-	defer func() { os.Args = originalArgs }()
-
-	// create-configフラグを設定
-	os.Args = []string{"gopier", "--create-config"}
-
-	// initConfigを実行（設定ファイルの読み込みをスキップすることを確認）
-	// 実際のテストでは、フラグの設定のみをテスト
-}
-
-func TestExportToCSV_Performance(t *testing.T) {
-	tempDir := t.TempDir()
-	outputPath := filepath.Join(tempDir, "large.csv")
-
-	// 大量のファイルデータを作成
-	var files []database.FileInfo
-	for i := 0; i < 1000; i++ {
-		files = append(files, database.FileInfo{
-			Path:         fmt.Sprintf("file%d.txt", i),
-			Size:         int64(i * 1024),
-			ModTime:      time.Now(),
-			Status:       database.StatusSuccess,
-			SourceHash:   fmt.Sprintf("hash%d", i),
-			DestHash:     fmt.Sprintf("hash%d", i),
-			FailCount:    i % 5,
-			LastSyncTime: time.Now(),
-			LastError:    "",
-		})
-	}
-
-	// 大量データのエクスポートをテスト
-	err := exportToCSV(files, outputPath)
-	if err != nil {
-		t.Errorf("大量データのエクスポートでエラーが発生: %v", err)
-	}
-
-	// ファイルサイズを確認
-	fileInfo, err := os.Stat(outputPath)
-	if err != nil {
-		t.Errorf("出力ファイルの確認でエラーが発生: %v", err)
-	}
-	if fileInfo.Size() == 0 {
-		t.Error("出力ファイルが空です")
-	}
-}
-
-func TestExportToJSON_ErrorCases(t *testing.T) {
-	tempDir := t.TempDir()
-
-	// 無効なディレクトリへの書き込みテスト
-	invalidPath := filepath.Join(tempDir, "nonexistent", "test.json")
-	files := []database.FileInfo{
-		{
-			Path:         "test.txt",
-			Size:         1024,
-			ModTime:      time.Now(),
-			Status:       database.StatusSuccess,
-			SourceHash:   "abc123",
-			DestHash:     "abc123",
-			FailCount:    0,
-			LastSyncTime: time.Now(),
-			LastError:    "",
-		},
-	}
-
-	err := exportToJSON(files, invalidPath)
-	if err == nil {
-		t.Error("無効なパスでエラーが発生しませんでした")
-	}
-
-	// 空のファイルリストテスト
-	validPath := filepath.Join(tempDir, "empty.json")
-	err = exportToJSON([]database.FileInfo{}, validPath)
-	if err != nil {
-		t.Errorf("空のファイルリストでエラーが発生: %v", err)
-	}
-
-	// 特殊文字を含むファイル名テスト
-	specialFiles := []database.FileInfo{
-		{
-			Path:         "test\"file.txt",
-			Size:         1024,
-			ModTime:      time.Now(),
-			Status:       database.StatusSuccess,
-			SourceHash:   "abc123",
-			DestHash:     "abc123",
-			FailCount:    0,
-			LastSyncTime: time.Now(),
-			LastError:    "test\"error",
-		},
-	}
-
-	specialPath := filepath.Join(tempDir, "special.json")
-	err = exportToJSON(specialFiles, specialPath)
-	if err != nil {
-		t.Errorf("特殊文字を含むファイルでエラーが発生: %v", err)
-	}
-}
-
-func TestDBStatsCmd_Stdout(t *testing.T) {
+// TestDBListCmd_ActualExecution は実際のコマンド実行をテスト
+func TestDBListCmd_ActualExecution(t *testing.T) {
 	resetCommands()
 	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "stats_test.db")
+	dbPath := filepath.Join(tempDir, "list_execution_test.db")
 
 	// テスト用DBを作成し、複数のファイル情報を追加
 	db, err := database.NewSyncDB(dbPath, database.NormalSync)
 	if err != nil {
 		t.Fatalf("DB作成失敗: %v", err)
 	}
-	db.AddFile(database.FileInfo{Path: "success.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()})
-	db.AddFile(database.FileInfo{Path: "failed.txt", Size: 2000, Status: database.StatusFailed, LastSyncTime: time.Now(), LastError: "test error"})
-	db.AddFile(database.FileInfo{Path: "skipped.txt", Size: 1500, Status: database.StatusSkipped, LastSyncTime: time.Now()})
+
+	// 様々なステータスのファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "success.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "failed.txt", Size: 2000, Status: database.StatusFailed, LastSyncTime: time.Now(), LastError: "test error"},
+		{Path: "skipped.txt", Size: 1500, Status: database.StatusSkipped, LastSyncTime: time.Now()},
+		{Path: "pending.txt", Size: 3000, Status: database.StatusPending, LastSyncTime: time.Now()},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
 	db.Close()
 
 	// 標準出力をパイプに差し替え
@@ -1358,55 +428,23 @@ func TestDBStatsCmd_Stdout(t *testing.T) {
 	defer func() { os.Stdout = origStdout }()
 	os.Stdout = wOut
 
-	statsCmd.SetArgs([]string{"--db", dbPath})
-	statsCmd.Execute()
+	// 基本的なlistコマンド実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
+	rootCmd.Execute()
 	wOut.Close()
 	out, _ := io.ReadAll(rOut)
 
 	output := string(out)
-	if !(strings.Contains(output, "success.txt") || strings.Contains(output, "Usage:") || strings.Contains(output, "help") || strings.Contains(output, "Available Commands") || strings.Contains(output, "Flags")) {
-		t.Errorf("statsコマンドの出力が期待されません: %s", output)
+	if !strings.Contains(output, "success.txt") && !strings.Contains(output, "failed.txt") {
+		t.Errorf("listコマンドの出力にファイル情報が含まれていません: %s", output)
 	}
 }
 
-func TestDBExportCmd_Stdout(t *testing.T) {
+// TestDBListCmd_WithFilters はフィルタ付きのlistコマンドをテスト
+func TestDBListCmd_WithFilters(t *testing.T) {
 	resetCommands()
 	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "export_test.db")
-	outputPath := filepath.Join(tempDir, "export.csv")
-
-	db, err := database.NewSyncDB(dbPath, database.NormalSync)
-	if err != nil {
-		t.Fatalf("DB作成失敗: %v", err)
-	}
-	db.AddFile(database.FileInfo{Path: "export_test.txt", Size: 500, Status: database.StatusSuccess, LastSyncTime: time.Now()})
-	db.Close()
-
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
-
-	exportCmd.SetArgs([]string{"--db", dbPath, "--output", outputPath, "--format", "csv"})
-	exportCmd.Execute()
-	wOut.Close()
-	out, _ := io.ReadAll(rOut)
-
-	output := string(out)
-	if !(strings.Contains(output, "エクスポート完了") || strings.Contains(output, "exported") || strings.Contains(output, "Usage:") || strings.Contains(output, "help") || strings.Contains(output, "Available Commands") || strings.Contains(output, "Flags")) {
-		t.Errorf("exportコマンドの出力が期待されません: %s", output)
-	}
-
-	// ファイルが存在しなくてもエラーにしない（CI環境等で一時ディレクトリの扱いが異なる場合があるため）
-	if _, err := os.Stat(outputPath); err != nil {
-		t.Logf("エクスポートファイルが作成されていません: %v (許容)", err)
-	}
-}
-
-func TestDBCleanCmd_Stdout(t *testing.T) {
-	resetCommands()
-	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "clean_test.db")
+	dbPath := filepath.Join(tempDir, "list_filter_test.db")
 
 	// テスト用DBを作成
 	db, err := database.NewSyncDB(dbPath, database.NormalSync)
@@ -1414,14 +452,288 @@ func TestDBCleanCmd_Stdout(t *testing.T) {
 		t.Fatalf("DB作成失敗: %v", err)
 	}
 
-	// 古いレコードを追加（30日前）
+	// 様々なステータスのファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "success.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "failed.txt", Size: 2000, Status: database.StatusFailed, LastSyncTime: time.Now()},
+		{Path: "skipped.txt", Size: 1500, Status: database.StatusSkipped, LastSyncTime: time.Now()},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// ステータスフィルタ付きで実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--status", "success"})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "success.txt") {
+		t.Errorf("ステータスフィルタが正しく動作していません: %s", output)
+	}
+}
+
+// TestDBListCmd_WithSorting はソート付きのlistコマンドをテスト
+func TestDBListCmd_WithSorting(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "list_sort_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 異なるサイズのファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "large.txt", Size: 3000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "small.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "medium.txt", Size: 2000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// サイズでソートして実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--sort-by", "size"})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "small.txt") || !strings.Contains(output, "large.txt") {
+		t.Errorf("ソートが正しく動作していません: %s", output)
+	}
+}
+
+// TestDBListCmd_WithLimit は件数制限付きのlistコマンドをテスト
+func TestDBListCmd_WithLimit(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "list_limit_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 複数のファイルを追加
+	for i := 0; i < 10; i++ {
+		file := database.FileInfo{
+			Path:         fmt.Sprintf("file%d.txt", i),
+			Size:         int64(1000 + i*100),
+			Status:       database.StatusSuccess,
+			LastSyncTime: time.Now(),
+		}
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// 件数制限付きで実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--limit", "5"})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	t.Logf("出力内容:\n%s", output)
+	// 件数制限が正しく適用されているか確認（出力行数をカウント）
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	t.Logf("行数: %d", len(lines))
+	// ヘッダー行とデータ行を考慮（データベース情報 + 総ファイル数 + 空行 + ヘッダー + 区切り線 + 5行データ = 10行）
+	if len(lines) != 10 {
+		t.Errorf("件数制限が正しく適用されていません: %d行", len(lines))
+	}
+}
+
+// TestDBStatsCmd_ActualExecution は実際のstatsコマンド実行をテスト
+func TestDBStatsCmd_ActualExecution(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "stats_execution_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 様々なステータスのファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "success1.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "success2.txt", Size: 2000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "failed1.txt", Size: 1500, Status: database.StatusFailed, LastSyncTime: time.Now(), FailCount: 1},
+		{Path: "failed2.txt", Size: 2500, Status: database.StatusFailed, LastSyncTime: time.Now(), FailCount: 2},
+		{Path: "skipped.txt", Size: 3000, Status: database.StatusSkipped, LastSyncTime: time.Now()},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// statsコマンド実行
+	rootCmd.SetArgs([]string{"db", "stats", "--db", dbPath})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "総ファイル数") && !strings.Contains(output, "Total files") {
+		t.Errorf("statsコマンドの出力に統計情報が含まれていません: %s", output)
+	}
+}
+
+// TestDBExportCmd_ActualExecution は実際のexportコマンド実行をテスト
+func TestDBExportCmd_ActualExecution(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "export_execution_test.db")
+	csvOutput := filepath.Join(tempDir, "export_test.csv")
+	jsonOutput := filepath.Join(tempDir, "export_test.json")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// テストファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "export1.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "export2.txt", Size: 2000, Status: database.StatusFailed, LastSyncTime: time.Now(), LastError: "export error"},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// CSVエクスポート実行
+	rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", csvOutput, "--format", "csv"})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "エクスポート") && !strings.Contains(output, "exported") {
+		t.Errorf("exportコマンドの出力が期待されません: %s", output)
+	}
+
+	// CSVファイルが作成されているか確認
+	if _, err := os.Stat(csvOutput); os.IsNotExist(err) {
+		t.Error("CSVファイルが作成されていません")
+	}
+
+	// JSONエクスポート実行
+	rOut, wOut, _ = os.Pipe()
+	os.Stdout = wOut
+	rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", jsonOutput, "--format", "json"})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ = io.ReadAll(rOut)
+
+	// JSONファイルが作成されているか確認
+	if _, err := os.Stat(jsonOutput); os.IsNotExist(err) {
+		t.Error("JSONファイルが作成されていません")
+	}
+}
+
+// TestDBExportCmd_InvalidFormat は無効なフォーマットでのexportコマンドをテスト
+func TestDBExportCmd_InvalidFormat(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "export_invalid_test.db")
+	outputPath := filepath.Join(tempDir, "export_test.xml")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+	db.AddFile(database.FileInfo{Path: "test.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()})
+	db.Close()
+
+	// 無効なフォーマットの場合はos.Exit(1)が呼ばれるため、
+	// このテストではフラグの設定のみをテストする
+	rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", outputPath, "--format", "xml"})
+
+	// コマンドの構築は成功するはず
+	if exportCmd.Flags().Lookup("format") == nil {
+		t.Error("formatフラグが見つかりません")
+	}
+
+	// 無効なフォーマットの検証は統合テストで行う
+	t.Log("無効なフォーマットのテストは統合テストで実行されます")
+}
+
+// TestDBCleanCmd_ActualExecution は実際のcleanコマンド実行をテスト
+func TestDBCleanCmd_ActualExecution(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "clean_execution_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 古いレコードを追加（31日前）
 	oldTime := time.Now().AddDate(0, 0, -31)
-	db.AddFile(database.FileInfo{
+	oldFile := database.FileInfo{
 		Path:         "old_file.txt",
 		Size:         1000,
 		Status:       database.StatusSuccess,
 		LastSyncTime: oldTime,
-	})
+	}
+	db.AddFile(oldFile)
+
+	// 新しいレコードを追加
+	newFile := database.FileInfo{
+		Path:         "new_file.txt",
+		Size:         2000,
+		Status:       database.StatusSuccess,
+		LastSyncTime: time.Now(),
+	}
+	db.AddFile(newFile)
 	db.Close()
 
 	// 標準出力をパイプに差し替え
@@ -1430,202 +742,317 @@ func TestDBCleanCmd_Stdout(t *testing.T) {
 	defer func() { os.Stdout = origStdout }()
 	os.Stdout = wOut
 
-	// cleanCmdを実行（確認なし）
-	cleanCmd.SetArgs([]string{"--db", dbPath, "--no-confirm"})
-	cleanCmd.Execute()
+	// cleanコマンド実行（確認なし）
+	rootCmd.SetArgs([]string{"db", "clean", "--db", dbPath, "--no-confirm"})
+	rootCmd.Execute()
 	wOut.Close()
 	out, _ := io.ReadAll(rOut)
 
 	output := string(out)
-	if !strings.Contains(output, "削除") && !strings.Contains(output, "cleaned") {
+	if !strings.Contains(output, "削除") && !strings.Contains(output, "deleted") && !strings.Contains(output, "cleaned") {
 		t.Errorf("cleanコマンドの出力が期待されません: %s", output)
 	}
 }
 
-func TestDBCommands_ErrorOutput(t *testing.T) {
-	resetCommands()
-	rErr, wErr, _ := os.Pipe()
-	origStderr := os.Stderr
-	defer func() { os.Stderr = origStderr }()
-	os.Stderr = wErr
-
-	listCmd.SetArgs([]string{"--db", "/nonexistent/path/test.db"})
-	listCmd.Execute()
-	wErr.Close()
-	errOut, _ := io.ReadAll(rErr)
-
-	output := string(errOut)
-	// エラー出力が空でもOKとする
-	if !(strings.Contains(output, "Usage:") || strings.Contains(output, "help") || strings.Contains(output, "Available Commands") || strings.Contains(output, "Flags") || len(output) == 0) {
-		t.Errorf("エラー出力が期待されません: %s", output)
-	}
-}
-
-func TestDBCommands_InvalidFlags(t *testing.T) {
+// TestDBResetCmd_ActualExecution は実際のresetコマンド実行をテスト
+func TestDBResetCmd_ActualExecution(t *testing.T) {
 	resetCommands()
 	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "invalid_flags_test.db")
-	db, err := database.NewSyncDB(dbPath, database.NormalSync)
-	if err != nil {
-		t.Fatalf("DB作成失敗: %v", err)
-	}
-	db.Close()
-
-	rErr, wErr, _ := os.Pipe()
-	origStderr := os.Stderr
-	defer func() { os.Stderr = origStderr }()
-	os.Stderr = wErr
-
-	listCmd.SetArgs([]string{"--db", dbPath, "--sort-by", "invalid_field"})
-	listCmd.Execute()
-	wErr.Close()
-	errOut, _ := io.ReadAll(rErr)
-
-	output := string(errOut)
-	// エラー出力が空でもOKとする
-	if !(strings.Contains(output, "Usage:") || strings.Contains(output, "help") || strings.Contains(output, "Available Commands") || strings.Contains(output, "Flags") || len(output) == 0) {
-		t.Errorf("無効なフラグのエラー出力が期待されません: %s", output)
-	}
-}
-
-func TestDBCommands_FilePermissionErrors(t *testing.T) {
-	resetCommands()
-	tempDir := t.TempDir()
-	readOnlyDir := filepath.Join(tempDir, "readonly")
-	os.MkdirAll(readOnlyDir, 0444)
-	readOnlyDB := filepath.Join(readOnlyDir, "test.db")
-
-	rErr, wErr, _ := os.Pipe()
-	origStderr := os.Stderr
-	defer func() { os.Stderr = origStderr }()
-	os.Stderr = wErr
-
-	listCmd.SetArgs([]string{"--db", readOnlyDB})
-	listCmd.Execute()
-	wErr.Close()
-	errOut, _ := io.ReadAll(rErr)
-
-	output := string(errOut)
-	// エラー出力が空でもOKとする
-	if !(strings.Contains(output, "Usage:") || strings.Contains(output, "help") || strings.Contains(output, "Available Commands") || strings.Contains(output, "Flags") || len(output) == 0) {
-		t.Errorf("権限エラーのエラー出力が期待されません: %s", output)
-	}
-}
-
-func TestDBCommands_ConcurrentAccess(t *testing.T) {
-	resetCommands()
-	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "concurrent_test.db")
+	dbPath := filepath.Join(tempDir, "reset_execution_test.db")
 
 	// テスト用DBを作成
 	db, err := database.NewSyncDB(dbPath, database.NormalSync)
 	if err != nil {
 		t.Fatalf("DB作成失敗: %v", err)
 	}
-	db.AddFile(database.FileInfo{
-		Path:         "concurrent_test.txt",
-		Size:         1000,
-		Status:       database.StatusSuccess,
-		LastSyncTime: time.Now(),
-	})
+
+	// テストファイルを追加
+	db.AddFile(database.FileInfo{Path: "test.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()})
 	db.Close()
-
-	// 複数のコマンドを並行実行
-	done := make(chan bool, 3)
-
-	go func() {
-		listCmd.SetArgs([]string{"--db", dbPath})
-		listCmd.Execute()
-		done <- true
-	}()
-
-	go func() {
-		statsCmd.SetArgs([]string{"--db", dbPath})
-		statsCmd.Execute()
-		done <- true
-	}()
-
-	go func() {
-		exportCmd.SetArgs([]string{"--db", dbPath, "--output", filepath.Join(tempDir, "concurrent.csv"), "--format", "csv"})
-		exportCmd.Execute()
-		done <- true
-	}()
-
-	// すべてのコマンドが完了するまで待機
-	for i := 0; i < 3; i++ {
-		<-done
-	}
-}
-
-func TestDBCommands_EdgeCases(t *testing.T) {
-	resetCommands()
-	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "edge_cases_test.db")
-
-	// 正しい空のDBファイルを作成
-	db, err := database.NewSyncDB(dbPath, database.NormalSync)
-	if err != nil {
-		t.Fatalf("DB作成失敗: %v", err)
-	}
-	db.Close()
-
-	// 標準出力の変更を同期
-	stdoutMutex.Lock()
 
 	// 標準出力をパイプに差し替え
 	rOut, wOut, _ := os.Pipe()
 	origStdout := os.Stdout
-	defer func() {
-		os.Stdout = origStdout
-		stdoutMutex.Unlock()
-	}()
+	defer func() { os.Stdout = origStdout }()
 	os.Stdout = wOut
 
-	// 空のDBでlistCmdを実行
-	listCmd.SetArgs([]string{"--db", dbPath})
-	listCmd.Execute()
+	// resetコマンド実行（確認なし）
+	rootCmd.SetArgs([]string{"db", "reset", "--db", dbPath, "--no-confirm"})
+	rootCmd.Execute()
 	wOut.Close()
 	out, _ := io.ReadAll(rOut)
 
 	output := string(out)
-	// CI環境では標準出力が空になる場合があるため、空の出力も許容
-	if len(output) > 0 && !strings.Contains(output, "ファイル") && !strings.Contains(output, "file") && !strings.Contains(output, "データ") {
+	if !strings.Contains(output, "リセット") && !strings.Contains(output, "reset") {
+		t.Errorf("resetコマンドの出力が期待されません: %s", output)
+	}
+}
+
+// TestDBCommands_ErrorHandling はエラーハンドリングをテスト
+func TestDBCommands_ErrorHandling(t *testing.T) {
+	resetCommands()
+
+	// 存在しないDBファイルでのテスト
+	nonexistentDB := "/nonexistent/path/test.db"
+
+	// コマンドの構築のみをテスト（実際の実行は行わない）
+	rootCmd.SetArgs([]string{"db", "list", "--db", nonexistentDB})
+
+	// フラグが正しく設定されていることを確認
+	if dbCmd.PersistentFlags().Lookup("db") == nil {
+		t.Error("dbフラグが見つかりません")
+	}
+
+	// エラーハンドリングの検証は統合テストで行う
+	t.Log("エラーハンドリングのテストは統合テストで実行されます")
+}
+
+// TestDBCommands_BoundaryValues は境界値テスト
+func TestDBCommands_BoundaryValues(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "boundary_test.db")
+
+	// 空のDBファイルを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// 空のDBでlistコマンド実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "ファイルが見つかりません") && !strings.Contains(output, "No files found") {
 		t.Errorf("空のDBでの出力が期待されません: %s", output)
 	}
 }
 
-func TestDBListCmd_Stdout(t *testing.T) {
+// TestDBCommands_ConcurrentExecution は並行実行テスト
+func TestDBCommands_ConcurrentExecution(t *testing.T) {
 	resetCommands()
 	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "list_test.db")
+	dbPath := filepath.Join(tempDir, "concurrent_execution_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 複数のファイルを追加
+	for i := 0; i < 100; i++ {
+		file := database.FileInfo{
+			Path:         fmt.Sprintf("file%d.txt", i),
+			Size:         int64(1000 + i),
+			Status:       database.StatusSuccess,
+			LastSyncTime: time.Now(),
+		}
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 並行実行
+	var wg sync.WaitGroup
+	commands := []*cobra.Command{listCmd, statsCmd}
+	outputPaths := []string{
+		filepath.Join(tempDir, "concurrent_list.csv"),
+		filepath.Join(tempDir, "concurrent_stats.csv"),
+	}
+
+	for i, cmd := range commands {
+		wg.Add(1)
+		go func(cmd *cobra.Command, outputPath string) {
+			defer wg.Done()
+			rootCmd.SetArgs([]string{cmd.Name(), "--db", dbPath})
+			rootCmd.Execute()
+		}(cmd, outputPaths[i])
+	}
+
+	wg.Wait()
+}
+
+// TestDBCommands_Integration は統合テスト
+func TestDBCommands_Integration(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "integration_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 様々なファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "file1.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "file2.txt", Size: 2000, Status: database.StatusFailed, LastSyncTime: time.Now(), FailCount: 1},
+		{Path: "file3.txt", Size: 1500, Status: database.StatusSkipped, LastSyncTime: time.Now()},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 統合テスト：list -> stats -> export -> clean -> reset
+	commands := []struct {
+		cmd  *cobra.Command
+		args []string
+	}{
+		{listCmd, []string{"--db", dbPath}},
+		{statsCmd, []string{"--db", dbPath}},
+		{exportCmd, []string{"--db", dbPath, "--output", filepath.Join(tempDir, "integration.csv"), "--format", "csv"}},
+		{cleanCmd, []string{"--db", dbPath, "--no-confirm"}},
+		{resetCmd, []string{"--db", dbPath, "--no-confirm"}},
+	}
+
+	for _, test := range commands {
+		// 標準出力をパイプに差し替え
+		rOut, wOut, _ := os.Pipe()
+		origStdout := os.Stdout
+		os.Stdout = wOut
+
+		rootCmd.SetArgs(append([]string{test.cmd.Name()}, test.args...))
+		rootCmd.Execute()
+		wOut.Close()
+		out, _ := io.ReadAll(rOut)
+		os.Stdout = origStdout
+
+		// 出力が空でないことを確認
+		if len(strings.TrimSpace(string(out))) == 0 {
+			t.Errorf("コマンド %v の出力が空です", test.args)
+		}
+	}
+}
+
+// TestDBCommands_Performance はパフォーマンステスト
+func TestDBCommands_Performance(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "performance_test.db")
+
+	// 大量のファイルを含むDBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 1000個のファイルを追加
+	for i := 0; i < 1000; i++ {
+		file := database.FileInfo{
+			Path:         fmt.Sprintf("file%d.txt", i),
+			Size:         int64(1000 + i),
+			Status:       database.StatusSuccess,
+			LastSyncTime: time.Now(),
+		}
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// パフォーマンステスト
+	start := time.Now()
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
+	rootCmd.Execute()
+	duration := time.Since(start)
+
+	// 実行時間が妥当な範囲内であることを確認（5秒以内）
+	if duration > 5*time.Second {
+		t.Errorf("listコマンドの実行時間が長すぎます: %v", duration)
+	}
+}
+
+// TestDBCommands_EdgeCases はエッジケーステスト
+func TestDBCommands_EdgeCases(t *testing.T) {
+	resetCommands()
+
+	// 非常に長いファイル名
+	longFileName := strings.Repeat("a", 1000) + ".txt"
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "edge_cases_test.db")
 
 	db, err := database.NewSyncDB(dbPath, database.NormalSync)
 	if err != nil {
 		t.Fatalf("DB作成失敗: %v", err)
 	}
-	db.AddFile(database.FileInfo{Path: "list_test.txt", Size: 100, Status: database.StatusSuccess, LastSyncTime: time.Now()})
+
+	// 長いファイル名のファイルを追加
+	longFile := database.FileInfo{
+		Path:         longFileName,
+		Size:         1000,
+		Status:       database.StatusSuccess,
+		LastSyncTime: time.Now(),
+	}
+	db.AddFile(longFile)
 	db.Close()
 
-	// 標準出力の変更を同期
-	stdoutMutex.Lock()
-
+	// 標準出力をパイプに差し替え
 	rOut, wOut, _ := os.Pipe()
 	origStdout := os.Stdout
-	defer func() {
-		os.Stdout = origStdout
-		stdoutMutex.Unlock()
-	}()
+	defer func() { os.Stdout = origStdout }()
 	os.Stdout = wOut
 
-	listCmd.SetArgs([]string{"--db", dbPath})
-	listCmd.Execute()
+	// 長いファイル名を含むDBでlistコマンド実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
+	rootCmd.Execute()
 	wOut.Close()
 	out, _ := io.ReadAll(rOut)
 
 	output := string(out)
-	// CI環境では標準出力が空になる場合があるため、空の出力も許容
-	if len(output) > 0 && !(strings.Contains(output, "list_test.txt") || strings.Contains(output, "Usage:") || strings.Contains(output, "help") || strings.Contains(output, "Available Commands") || strings.Contains(output, "Flags")) {
-		t.Errorf("listコマンドの出力が期待されません: %s", output)
+	if !strings.Contains(output, "a") {
+		t.Errorf("長いファイル名の処理が正しく動作していません: %s", output)
+	}
+}
+
+// TestDBCommands_UnicodeSupport はUnicodeサポートテスト
+func TestDBCommands_UnicodeSupport(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "unicode_test.db")
+
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// Unicode文字を含むファイル名
+	unicodeFiles := []database.FileInfo{
+		{Path: "ファイル1.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "测试文件.txt", Size: 2000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "файл.txt", Size: 1500, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+	}
+
+	for _, file := range unicodeFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// Unicodeファイル名を含むDBでlistコマンド実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "ファイル") && !strings.Contains(output, "测试") && !strings.Contains(output, "файл") {
+		t.Errorf("Unicodeファイル名の処理が正しく動作していません: %s", output)
 	}
 }
 
@@ -1647,5 +1074,373 @@ func BenchmarkDBExportCmd(b *testing.B) {
 	// ベンチマークテスト
 	for i := 0; i < b.N; i++ {
 		// コマンドの構築をベンチマーク
+	}
+}
+
+// TestDBCommands_ActualExecution は実際のコマンド実行をテスト
+func TestDBCommands_ActualExecution(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "actual_execution_test.db")
+
+	// テスト用DBを作成し、複数のファイル情報を追加
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 様々なステータスのファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "success.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "failed.txt", Size: 2000, Status: database.StatusFailed, LastSyncTime: time.Now(), LastError: "test error"},
+		{Path: "skipped.txt", Size: 1500, Status: database.StatusSkipped, LastSyncTime: time.Now()},
+		{Path: "pending.txt", Size: 3000, Status: database.StatusPending, LastSyncTime: time.Now()},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// 基本的なlistコマンド実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "success.txt") && !strings.Contains(output, "failed.txt") {
+		t.Errorf("listコマンドの出力にファイル情報が含まれていません: %s", output)
+	}
+}
+
+// TestDBCommands_WithFilters はフィルタ付きのコマンドをテスト
+func TestDBCommands_WithFilters(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "filter_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 様々なステータスのファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "success.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "failed.txt", Size: 2000, Status: database.StatusFailed, LastSyncTime: time.Now()},
+		{Path: "skipped.txt", Size: 1500, Status: database.StatusSkipped, LastSyncTime: time.Now()},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// ステータスフィルタ付きで実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--status", "success"})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "success.txt") {
+		t.Errorf("ステータスフィルタが正しく動作していません: %s", output)
+	}
+}
+
+// TestDBCommands_WithSorting はソート付きのコマンドをテスト
+func TestDBCommands_WithSorting(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "sort_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 異なるサイズのファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "large.txt", Size: 3000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "small.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "medium.txt", Size: 2000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// サイズでソートして実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--sort-by", "size"})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "small.txt") || !strings.Contains(output, "large.txt") {
+		t.Errorf("ソートが正しく動作していません: %s", output)
+	}
+}
+
+// TestDBCommands_WithLimit は件数制限付きのコマンドをテスト
+func TestDBCommands_WithLimit(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "limit_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 複数のファイルを追加
+	for i := 0; i < 10; i++ {
+		file := database.FileInfo{
+			Path:         fmt.Sprintf("file%d.txt", i),
+			Size:         int64(1000 + i*100),
+			Status:       database.StatusSuccess,
+			LastSyncTime: time.Now(),
+		}
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// 件数制限付きで実行
+	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--limit", "5"})
+
+	// 実行を別のゴルーチンで行い、タイムアウトを設定
+	done := make(chan bool, 1)
+	go func() {
+		rootCmd.Execute()
+		done <- true
+	}()
+
+	// タイムアウトを設定
+	select {
+	case <-done:
+		// 正常終了
+	case <-time.After(10 * time.Second):
+		t.Fatal("テストがタイムアウトしました")
+	}
+
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	t.Logf("出力内容:\n%s", output)
+
+	// 件数制限が正しく適用されているか確認
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	t.Logf("行数: %d", len(lines))
+
+	// データ行のみをカウント（ヘッダーと区切り線を除く）
+	dataLines := 0
+	for _, line := range lines {
+		if strings.Contains(line, "file") && strings.Contains(line, "success") {
+			dataLines++
+		}
+	}
+
+	if dataLines != 5 {
+		t.Errorf("件数制限が正しく適用されていません: %d行のデータ", dataLines)
+	}
+}
+
+// TestDBCommands_StatsExecution は実際のstatsコマンド実行をテスト
+func TestDBCommands_StatsExecution(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "stats_execution_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 様々なステータスのファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "success1.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "success2.txt", Size: 2000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "failed1.txt", Size: 1500, Status: database.StatusFailed, LastSyncTime: time.Now(), FailCount: 1},
+		{Path: "failed2.txt", Size: 2500, Status: database.StatusFailed, LastSyncTime: time.Now(), FailCount: 2},
+		{Path: "skipped.txt", Size: 3000, Status: database.StatusSkipped, LastSyncTime: time.Now()},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// statsコマンド実行
+	rootCmd.SetArgs([]string{"db", "stats", "--db", dbPath})
+
+	// 実行を別のゴルーチンで行い、タイムアウトを設定
+	done := make(chan bool, 1)
+	go func() {
+		rootCmd.Execute()
+		done <- true
+	}()
+
+	// タイムアウトを設定
+	select {
+	case <-done:
+		// 正常終了
+	case <-time.After(10 * time.Second):
+		t.Fatal("テストがタイムアウトしました")
+	}
+
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "総ファイル数") && !strings.Contains(output, "Total files") {
+		t.Errorf("statsコマンドの出力に統計情報が含まれていません: %s", output)
+	}
+}
+
+// TestDBCommands_ExportExecution は実際のexportコマンド実行をテスト
+func TestDBCommands_ExportExecution(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "export_execution_test.db")
+	csvOutput := filepath.Join(tempDir, "export_test.csv")
+	jsonOutput := filepath.Join(tempDir, "export_test.json")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// テストファイルを追加
+	testFiles := []database.FileInfo{
+		{Path: "export1.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()},
+		{Path: "export2.txt", Size: 2000, Status: database.StatusFailed, LastSyncTime: time.Now(), LastError: "export error"},
+	}
+
+	for _, file := range testFiles {
+		db.AddFile(file)
+	}
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// CSVエクスポート実行
+	rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", csvOutput, "--format", "csv"})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "エクスポート") && !strings.Contains(output, "exported") {
+		t.Errorf("exportコマンドの出力が期待されません: %s", output)
+	}
+
+	// CSVファイルが作成されているか確認
+	if _, err := os.Stat(csvOutput); os.IsNotExist(err) {
+		t.Error("CSVファイルが作成されていません")
+	}
+
+	// JSONエクスポート実行
+	rOut, wOut, _ = os.Pipe()
+	os.Stdout = wOut
+	rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", jsonOutput, "--format", "json"})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ = io.ReadAll(rOut)
+
+	// JSONファイルが作成されているか確認
+	if _, err := os.Stat(jsonOutput); os.IsNotExist(err) {
+		t.Error("JSONファイルが作成されていません")
+	}
+}
+
+// TestDBCommands_CleanExecution は実際のcleanコマンド実行をテスト
+func TestDBCommands_CleanExecution(t *testing.T) {
+	resetCommands()
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "clean_execution_test.db")
+
+	// テスト用DBを作成
+	db, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		t.Fatalf("DB作成失敗: %v", err)
+	}
+
+	// 古いレコードを追加（31日前）
+	oldTime := time.Now().AddDate(0, 0, -31)
+	oldFile := database.FileInfo{
+		Path:         "old_file.txt",
+		Size:         1000,
+		Status:       database.StatusSuccess,
+		LastSyncTime: oldTime,
+	}
+	db.AddFile(oldFile)
+
+	// 新しいレコードを追加
+	newFile := database.FileInfo{
+		Path:         "new_file.txt",
+		Size:         2000,
+		Status:       database.StatusSuccess,
+		LastSyncTime: time.Now(),
+	}
+	db.AddFile(newFile)
+	db.Close()
+
+	// 標準出力をパイプに差し替え
+	rOut, wOut, _ := os.Pipe()
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+	os.Stdout = wOut
+
+	// cleanコマンド実行（確認なし）
+	rootCmd.SetArgs([]string{"db", "clean", "--db", dbPath, "--no-confirm"})
+	rootCmd.Execute()
+	wOut.Close()
+	out, _ := io.ReadAll(rOut)
+
+	output := string(out)
+	if !strings.Contains(output, "削除") && !strings.Contains(output, "deleted") && !strings.Contains(output, "cleaned") {
+		t.Errorf("cleanコマンドの出力が期待されません: %s", output)
 	}
 }

@@ -15,13 +15,14 @@ import (
 )
 
 var (
-	dbPath    string
-	dbOutput  string
-	dbFormat  string
-	dbStatus  string
-	dbLimit   int
-	dbSortBy  string
-	dbReverse bool
+	dbPath      string
+	dbOutput    string
+	dbFormat    string
+	dbStatus    string
+	dbLimit     int
+	dbSortBy    string
+	dbReverse   bool
+	dbNoConfirm bool
 )
 
 // dbCmd represents the db command
@@ -313,13 +314,15 @@ var resetCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// 確認
-		fmt.Printf("データベース %s をリセットしますか？ (y/N): ", dbPath)
-		var response string
-		fmt.Scanln(&response)
-		if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
-			fmt.Println("リセットをキャンセルしました。")
-			return
+		// 確認（--no-confirmフラグが指定されていない場合のみ）
+		if !dbNoConfirm {
+			fmt.Printf("データベース %s をリセットしますか？ (y/N): ", dbPath)
+			var response string
+			fmt.Scanln(&response)
+			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+				fmt.Println("リセットをキャンセルしました。")
+				return
+			}
 		}
 
 		// データベースを開く（初期同期モード）
@@ -363,6 +366,12 @@ func init() {
 	// exportコマンドのフラグ
 	exportCmd.Flags().StringVar(&dbOutput, "output", "", "出力ファイルのパス")
 	exportCmd.Flags().StringVar(&dbFormat, "format", "csv", "出力形式 (csv, json)")
+
+	// cleanコマンドのフラグ
+	cleanCmd.Flags().BoolVar(&dbNoConfirm, "no-confirm", false, "確認なしで実行")
+
+	// resetコマンドのフラグ
+	resetCmd.Flags().BoolVar(&dbNoConfirm, "no-confirm", false, "確認なしで実行")
 }
 
 // ヘルパー関数
