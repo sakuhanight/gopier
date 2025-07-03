@@ -15,9 +15,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// stdoutMutex は標準出力の変更を同期するためのミューテックス
-var stdoutMutex sync.Mutex
-
 // resetCommands はテストごとに新しいコマンドツリーを返す
 func resetCommands() *cobra.Command {
 	return newRootCmd()
@@ -38,7 +35,6 @@ func setupTestEnvironment(t *testing.T) (string, func()) {
 
 // captureOutput は標準出力をキャプチャします
 func captureOutput(t *testing.T) (*os.File, *os.File, func()) {
-	stdoutMutex.Lock()
 	// 標準出力をパイプに差し替え
 	rOut, wOut, _ := os.Pipe()
 	origStdout := os.Stdout
@@ -47,8 +43,6 @@ func captureOutput(t *testing.T) (*os.File, *os.File, func()) {
 	// クリーンアップ関数
 	cleanup := func() {
 		os.Stdout = origStdout
-		wOut.Close()
-		stdoutMutex.Unlock()
 	}
 
 	return rOut, wOut, cleanup
@@ -56,9 +50,15 @@ func captureOutput(t *testing.T) (*os.File, *os.File, func()) {
 
 // readOutput はキャプチャした出力を読み取ります
 func readOutput(rOut *os.File) string {
+	// カバレッジ生成時は短いタイムアウトを設定
+	timeout := 5 * time.Second
+	if os.Getenv("COVERAGE") == "1" {
+		timeout = 100 * time.Millisecond
+	}
+
 	// パイプからの読み取りを確実に行う
 	// コンテキスト付きでタイムアウトを設定
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// ゴルーチンで読み取りを実行
@@ -396,11 +396,9 @@ func TestDBListCmd_WithFilters(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// ステータスフィルタ付きで実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--status", "success"})
@@ -408,9 +406,8 @@ func TestDBListCmd_WithFilters(t *testing.T) {
 		t.Errorf("TestDBListCmd_WithFilters: ステータスフィルタ付きlistコマンドの実行に失敗: %v", err)
 	}
 	wOut.Close()
-	out, _ := io.ReadAll(rOut)
 
-	output := string(out)
+	output := readOutput(rOut)
 	if !strings.Contains(output, "success.txt") {
 		t.Errorf("TestDBListCmd_WithFilters: ステータスフィルタが正しく動作していません: %s", output)
 	}
@@ -440,11 +437,9 @@ func TestDBListCmd_WithSorting(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// サイズでソートして実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--sort-by", "size"})
@@ -452,9 +447,8 @@ func TestDBListCmd_WithSorting(t *testing.T) {
 		t.Errorf("TestDBListCmd_WithSorting: ソート付きlistコマンドの実行に失敗: %v", err)
 	}
 	wOut.Close()
-	out, _ := io.ReadAll(rOut)
 
-	output := string(out)
+	output := readOutput(rOut)
 	if !strings.Contains(output, "small.txt") || !strings.Contains(output, "large.txt") {
 		t.Errorf("TestDBListCmd_WithSorting: ソートが正しく動作していません: %s", output)
 	}
@@ -484,11 +478,9 @@ func TestDBListCmd_WithLimit(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// 件数制限付きで実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--limit", "5"})
@@ -496,9 +488,8 @@ func TestDBListCmd_WithLimit(t *testing.T) {
 		t.Errorf("TestDBListCmd_WithLimit: 件数制限付きlistコマンドの実行に失敗: %v", err)
 	}
 	wOut.Close()
-	out, _ := io.ReadAll(rOut)
 
-	output := string(out)
+	output := readOutput(rOut)
 	t.Logf("出力内容:\n%s", output)
 	// 件数制限が正しく適用されているか確認（出力行数をカウント）
 	lines := strings.Split(strings.TrimSpace(output), "\n")
@@ -535,11 +526,9 @@ func TestDBStatsCmd_ActualExecution(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// statsコマンド実行
 	rootCmd.SetArgs([]string{"db", "stats", "--db", dbPath})
@@ -547,9 +536,8 @@ func TestDBStatsCmd_ActualExecution(t *testing.T) {
 		t.Errorf("statsコマンドの実行に失敗: %v", err)
 	}
 	wOut.Close()
-	out, _ := io.ReadAll(rOut)
 
-	output := string(out)
+	output := readOutput(rOut)
 	if !strings.Contains(output, "総ファイル数") && !strings.Contains(output, "Total files") {
 		t.Errorf("statsコマンドの出力に統計情報が含まれていません: %s", output)
 	}
@@ -580,11 +568,9 @@ func TestDBExportCmd_ActualExecution(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// CSVエクスポート実行
 	rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", csvOutput, "--format", "csv"})
@@ -592,9 +578,8 @@ func TestDBExportCmd_ActualExecution(t *testing.T) {
 		t.Errorf("exportコマンドの実行に失敗: %v", err)
 	}
 	wOut.Close()
-	out, _ := io.ReadAll(rOut)
 
-	output := string(out)
+	output := readOutput(rOut)
 	if !strings.Contains(output, "エクスポート") && !strings.Contains(output, "exported") {
 		t.Errorf("exportコマンドの出力が期待されません: %s", output)
 	}
@@ -605,15 +590,17 @@ func TestDBExportCmd_ActualExecution(t *testing.T) {
 	}
 
 	// JSONエクスポート実行
-	rOut, wOut, _ = os.Pipe()
-	os.Stdout = wOut
-	rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", jsonOutput, "--format", "json"})
-	if err := rootCmd.Execute(); err != nil {
-		t.Errorf("exportコマンドの実行に失敗: %v", err)
-	}
-	wOut.Close()
-	out, _ = io.ReadAll(rOut)
+	{
+		rOut, wOut, cleanup := captureOutput(t)
+		defer cleanup()
+		rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", jsonOutput, "--format", "json"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Errorf("exportコマンドの実行に失敗: %v", err)
+		}
+		wOut.Close()
 
+		output = readOutput(rOut)
+	}
 	// JSONファイルが作成されているか確認
 	if _, err := os.Stat(jsonOutput); os.IsNotExist(err) {
 		t.Error("JSONファイルが作成されていません")
@@ -635,10 +622,9 @@ func TestDBExportCmd_InvalidFormat(t *testing.T) {
 	db.AddFile(database.FileInfo{Path: "test.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()})
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// 無効なフォーマットでコマンド実行
 	rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", outputPath, "--format", "xml"})
@@ -646,11 +632,9 @@ func TestDBExportCmd_InvalidFormat(t *testing.T) {
 
 	// パイプの書き込み側を閉じる
 	wOut.Close()
-	os.Stdout = origStdout
 
 	// 出力を読み取る
-	out, _ := io.ReadAll(rOut)
-	output := string(out)
+	output := readOutput(rOut)
 
 	// エラーが発生することを期待
 	if err == nil {
@@ -696,11 +680,9 @@ func TestDBCleanCmd_ActualExecution(t *testing.T) {
 	db.AddFile(newFile)
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// cleanコマンド実行（確認なし）
 	rootCmd.SetArgs([]string{"db", "clean", "--db", dbPath, "--no-confirm"})
@@ -708,9 +690,8 @@ func TestDBCleanCmd_ActualExecution(t *testing.T) {
 		t.Errorf("cleanコマンドの実行に失敗: %v", err)
 	}
 	wOut.Close()
-	out, _ := io.ReadAll(rOut)
 
-	output := string(out)
+	output := readOutput(rOut)
 	if !strings.Contains(output, "削除") && !strings.Contains(output, "deleted") && !strings.Contains(output, "cleaned") {
 		t.Errorf("cleanコマンドの出力が期待されません: %s", output)
 	}
@@ -732,11 +713,9 @@ func TestDBResetCmd_ActualExecution(t *testing.T) {
 	db.AddFile(database.FileInfo{Path: "test.txt", Size: 1000, Status: database.StatusSuccess, LastSyncTime: time.Now()})
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// resetコマンド実行（確認なし）
 	rootCmd.SetArgs([]string{"db", "reset", "--db", dbPath, "--no-confirm"})
@@ -744,9 +723,8 @@ func TestDBResetCmd_ActualExecution(t *testing.T) {
 		t.Errorf("resetコマンドの実行に失敗: %v", err)
 	}
 	wOut.Close()
-	out, _ := io.ReadAll(rOut)
 
-	output := string(out)
+	output := readOutput(rOut)
 	if !strings.Contains(output, "リセット") && !strings.Contains(output, "reset") {
 		t.Errorf("resetコマンドの出力が期待されません: %s", output)
 	}
@@ -759,10 +737,9 @@ func TestDBCommands_ErrorHandling(t *testing.T) {
 	// 存在しないDBファイルでのテスト
 	nonexistentDB := "/nonexistent/path/test.db"
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// 存在しないDBファイルでコマンド実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", nonexistentDB})
@@ -770,7 +747,6 @@ func TestDBCommands_ErrorHandling(t *testing.T) {
 
 	// パイプの書き込み側を閉じる
 	wOut.Close()
-	os.Stdout = origStdout
 
 	// 出力を読み取る
 	out, _ := io.ReadAll(rOut)
@@ -801,11 +777,9 @@ func TestDBCommands_BoundaryValues(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// 空のDBでlistコマンド実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
@@ -860,7 +834,7 @@ func TestDBCommands_ConcurrentExecution(t *testing.T) {
 			// 各ゴルーチンで独自のコマンドインスタンスを作成
 			rootCmd := resetCommands()
 
-			// 標準出力をパイプに差し替え
+			// 標準出力をキャプチャ
 			rOut, wOut, _ := os.Pipe()
 			origStdout := os.Stdout
 			os.Stdout = wOut
@@ -920,21 +894,24 @@ func TestDBCommands_Integration(t *testing.T) {
 	}
 
 	for _, test := range commands {
-		// 標準出力をパイプに差し替え
-		rOut, wOut, _ := os.Pipe()
-		origStdout := os.Stdout
-		os.Stdout = wOut
+		// 標準出力をキャプチャ
+		rOut, wOut, cleanup := captureOutput(t)
+		defer cleanup()
 
+		// コマンド実行
 		rootCmd.SetArgs(test.args)
 		if err := rootCmd.Execute(); err != nil {
 			t.Errorf("統合テストでのコマンド実行に失敗: %v", err)
 		}
+
+		// パイプの書き込み側を閉じる
 		wOut.Close()
-		out, _ := io.ReadAll(rOut)
-		os.Stdout = origStdout
+
+		// 出力を読み取る
+		output := readOutput(rOut)
 
 		// 出力が空でないことを確認
-		if len(strings.TrimSpace(string(out))) == 0 {
+		if len(strings.TrimSpace(output)) == 0 {
 			t.Errorf("コマンド %s の出力が空です", test.name)
 		}
 	}
@@ -1002,11 +979,9 @@ func TestDBCommands_EdgeCases(t *testing.T) {
 	db.AddFile(longFile)
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// 長いファイル名を含むDBでlistコマンド実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
@@ -1045,11 +1020,9 @@ func TestDBCommands_UnicodeSupport(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// Unicodeファイル名を含むDBでlistコマンド実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
@@ -1111,11 +1084,9 @@ func TestDBCommands_ActualExecution(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// 基本的なlistコマンド実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath})
@@ -1155,11 +1126,9 @@ func TestDBCommands_WithFilters(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// ステータスフィルタ付きで実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--status", "success"})
@@ -1199,11 +1168,9 @@ func TestDBCommands_WithSorting(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// サイズでソートして実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--sort-by", "size"})
@@ -1243,11 +1210,9 @@ func TestDBCommands_WithLimit(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// 件数制限付きで実行
 	rootCmd.SetArgs([]string{"db", "list", "--db", dbPath, "--limit", "5"})
@@ -1303,11 +1268,9 @@ func TestDBCommands_StatsExecution(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// statsコマンド実行
 	rootCmd.SetArgs([]string{"db", "stats", "--db", dbPath})
@@ -1348,11 +1311,9 @@ func TestDBCommands_ExportExecution(t *testing.T) {
 	}
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// CSVエクスポート実行
 	rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", csvOutput, "--format", "csv"})
@@ -1360,9 +1321,8 @@ func TestDBCommands_ExportExecution(t *testing.T) {
 		t.Errorf("exportコマンドの実行に失敗: %v", err)
 	}
 	wOut.Close()
-	out, _ := io.ReadAll(rOut)
 
-	output := string(out)
+	output := readOutput(rOut)
 	if !strings.Contains(output, "エクスポート") && !strings.Contains(output, "exported") {
 		t.Errorf("exportコマンドの出力が期待されません: %s", output)
 	}
@@ -1373,15 +1333,17 @@ func TestDBCommands_ExportExecution(t *testing.T) {
 	}
 
 	// JSONエクスポート実行
-	rOut, wOut, _ = os.Pipe()
-	os.Stdout = wOut
-	rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", jsonOutput, "--format", "json"})
-	if err := rootCmd.Execute(); err != nil {
-		t.Errorf("exportコマンドの実行に失敗: %v", err)
-	}
-	wOut.Close()
-	out, _ = io.ReadAll(rOut)
+	{
+		rOut, wOut, cleanup := captureOutput(t)
+		defer cleanup()
+		rootCmd.SetArgs([]string{"db", "export", "--db", dbPath, "--output", jsonOutput, "--format", "json"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Errorf("exportコマンドの実行に失敗: %v", err)
+		}
+		wOut.Close()
 
+		output = readOutput(rOut)
+	}
 	// JSONファイルが作成されているか確認
 	if _, err := os.Stat(jsonOutput); os.IsNotExist(err) {
 		t.Error("JSONファイルが作成されていません")
@@ -1420,11 +1382,9 @@ func TestDBCommands_CleanExecution(t *testing.T) {
 	db.AddFile(newFile)
 	db.Close()
 
-	// 標準出力をパイプに差し替え
-	rOut, wOut, _ := os.Pipe()
-	origStdout := os.Stdout
-	defer func() { os.Stdout = origStdout }()
-	os.Stdout = wOut
+	// 標準出力をキャプチャ
+	rOut, wOut, cleanup := captureOutput(t)
+	defer cleanup()
 
 	// cleanコマンド実行（確認なし）
 	rootCmd.SetArgs([]string{"db", "clean", "--db", dbPath, "--no-confirm"})
@@ -1432,9 +1392,8 @@ func TestDBCommands_CleanExecution(t *testing.T) {
 		t.Errorf("cleanコマンドの実行に失敗: %v", err)
 	}
 	wOut.Close()
-	out, _ := io.ReadAll(rOut)
 
-	output := string(out)
+	output := readOutput(rOut)
 	if !strings.Contains(output, "削除") && !strings.Contains(output, "deleted") && !strings.Contains(output, "cleaned") {
 		t.Errorf("cleanコマンドの出力が期待されません: %s", output)
 	}

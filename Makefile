@@ -107,14 +107,18 @@ test-timeout:
 .PHONY: test-coverage
 test-coverage:
 	@echo "テストカバレッジ実行中..."
-	go test -v -coverprofile=coverage.out ./cmd/... ./internal/...
-	@echo "カバレッジレポート生成中..."
-	@if [ -f coverage.out ]; then \
-		go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTMLレポート生成をスキップしました"; \
-		echo "カバレッジレポート: coverage.html"; \
-		go tool cover -func=coverage.out || echo "カバレッジ関数レポート生成をスキップしました"; \
+	@if COVERAGE=1 go test -v -coverprofile=coverage.out ./cmd/... ./internal/...; then \
+		echo "テスト成功。カバレッジレポート生成中..."; \
+		if [ -f coverage.out ]; then \
+			go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTMLレポート生成をスキップしました"; \
+			echo "カバレッジレポート: coverage.html"; \
+			go tool cover -func=coverage.out || echo "カバレッジ関数レポート生成をスキップしました"; \
+		else \
+			echo "カバレッジファイルが見つかりません"; \
+		fi; \
 	else \
-		echo "カバレッジファイルが見つかりません"; \
+		echo "テストが失敗しました。カバレッジレポートは生成されません。"; \
+		exit 1; \
 	fi
 
 # 依存関係の整理
