@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -567,6 +568,32 @@ func TestShowCurrentConfig(t *testing.T) {
 }
 
 func TestBindConfigToFlags(t *testing.T) {
+	// rootCmdを初期化
+	rootCmd.ResetFlags()
+	rootCmd.Flags().StringVarP(&sourceDir, "source", "s", "", "コピー元ディレクトリ (必須)")
+	rootCmd.Flags().StringVarP(&destDir, "destination", "d", "", "コピー先ディレクトリ (必須)")
+	rootCmd.Flags().StringVarP(&logFile, "log", "l", "", "ログファイルのパス")
+	rootCmd.Flags().IntVarP(&numWorkers, "workers", "w", runtime.NumCPU(), "並列ワーカー数")
+	rootCmd.Flags().IntVarP(&retryCount, "retry", "r", 3, "エラー時のリトライ回数")
+	rootCmd.Flags().IntVarP(&retryWait, "wait", "", 5, "リトライ間の待機時間（秒）")
+	rootCmd.Flags().StringVarP(&includePattern, "include", "i", "", "含めるファイルパターン（例: *.txt,*.docx）")
+	rootCmd.Flags().StringVarP(&excludePattern, "exclude", "e", "", "除外するファイルパターン（例: *.tmp,*.bak）")
+	rootCmd.Flags().BoolVarP(&mirror, "mirror", "m", false, "ミラーモード（宛先にない元ファイルを削除）")
+	rootCmd.Flags().BoolVarP(&recursive, "recursive", "R", true, "サブディレクトリも再帰的にコピー")
+	rootCmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "ドライラン（実際のコピーは行わない）")
+	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "詳細なログ出力")
+	rootCmd.Flags().BoolVarP(&skipNewer, "skip-newer", "", false, "宛先の方が新しい場合はスキップ")
+	rootCmd.Flags().BoolVarP(&noProgress, "no-progress", "", false, "プログレスバーを無効化")
+	rootCmd.Flags().StringVarP(&syncMode, "sync-mode", "", "normal", "同期モード (normal, initial, incremental)")
+	rootCmd.Flags().StringVarP(&syncDBPath, "sync-db", "", "sync_state.db", "同期状態データベースのパス")
+	rootCmd.Flags().BoolVarP(&includeFailed, "include-failed", "", true, "失敗したファイルを含める")
+	rootCmd.Flags().IntVarP(&maxFailCount, "max-fail-count", "", 5, "最大失敗回数")
+	rootCmd.Flags().BoolVarP(&verifyOnly, "verify-only", "", false, "検証のみ実行（コピーは行わない）")
+	rootCmd.Flags().BoolVarP(&verifyChanged, "verify-changed", "", false, "変更されたファイルのみ検証")
+	rootCmd.Flags().BoolVarP(&verifyAll, "verify-all", "", false, "すべてのファイルを検証")
+	rootCmd.Flags().StringVarP(&finalReport, "final-report", "", "", "最終レポートファイルのパス")
+	rootCmd.Flags().IntVarP(&bufferSize, "buffer-size", "b", 8, "バッファサイズ（MB）")
+
 	// テスト用の設定
 	config := &Config{
 		Source:         "/test/source",

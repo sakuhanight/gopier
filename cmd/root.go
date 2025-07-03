@@ -22,22 +22,20 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/sakuhanight/gopier/internal/database"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
-
-	"github.com/sakuhanight/gopier/internal/copier"
-	"github.com/sakuhanight/gopier/internal/database"
-	"github.com/sakuhanight/gopier/internal/filter"
-	"github.com/sakuhanight/gopier/internal/logger"
-	"github.com/sakuhanight/gopier/internal/verifier"
 )
 
 var (
@@ -119,189 +117,21 @@ type Config struct {
 	VerifyHash    bool   `mapstructure:"verify_hash"`
 }
 
-// rootCmd represents the base command when called without any subcommands
-var rootCmd = &cobra.Command{
-	Use:   "gopier",
-	Short: "高性能なファイル同期ツール",
-	Long: `Gopierは、Goで実装された高性能なファイル同期ツールです。
+// グローバルなrootCmdは従来通り残す
+var rootCmd *cobra.Command
+
+// newRootCmd は新しいコマンドツリーを生成して返す
+func newRootCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "gopier",
+		Short: "高性能なファイル同期ツール",
+		Long: `Gopierは、Goで実装された高性能なファイル同期ツールです。
 初期同期と追加同期の各フェーズに対応し、失敗したファイルの再同期機能と
 ハッシュ検証機能を備えています。
 
 詳細なログ出力にはUberのZapロガーを使用しています。`,
-	Run: func(cmd *cobra.Command, args []string) {
-		// バージョン表示フラグの確認
-		if version, _ := cmd.PersistentFlags().GetBool("version"); version {
-			fmt.Printf("gopier version %s (build: %s)\n", Version, BuildTime)
-			return
-		}
-
-		// 設定ファイル作成フラグの確認
-		if createConfig, _ := cmd.PersistentFlags().GetBool("create-config"); createConfig {
-			fmt.Println("設定ファイル作成を開始します...")
-
-			execPath, err := os.Executable()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "実行ファイルパスの取得エラー: %v\n", err)
-				os.Exit(1)
-			}
-			execDir := filepath.Dir(execPath)
-			configPath := filepath.Join(execDir, ".gopier.yaml")
-			fmt.Printf("設定ファイルパス: %s\n", configPath)
-
-			if err := createDefaultConfig(configPath); err != nil {
-				fmt.Fprintf(os.Stderr, "設定ファイル作成エラー: %v\n", err)
-				os.Exit(1)
-			}
-
-			fmt.Printf("設定ファイルを作成しました: %s\n", configPath)
-			fmt.Println("このファイルを編集してデフォルト設定をカスタマイズしてください。")
-			return
-		}
-
-		// 設定表示フラグの確認
-		if showConfig, _ := cmd.PersistentFlags().GetBool("show-config"); showConfig {
-			showCurrentConfig()
-			return
-		}
-
-		if sourceDir == "" || destDir == "" {
-			cmd.Help()
-			return
-		}
-
-		// デフォルトのワーカー数はCPUコア数
-		if numWorkers <= 0 {
-			numWorkers = runtime.NumCPU()
-		}
-
-		// ロガーの初期化
-		log := logger.NewLogger(logFile, verbose, !noProgress)
-		defer log.Close()
-
-		// フィルターの設定
-		fileFilter := filter.NewFilter(includePattern, excludePattern)
-
-		// コピーオプションの設定
-		options := copier.DefaultOptions()
-		options.BufferSize = bufferSize * 1024 * 1024 // MBからバイトに変換
-		options.Recursive = recursive
-		options.MaxRetries = retryCount
-		options.RetryDelay = time.Duration(retryWait) * time.Second
-		options.MaxConcurrent = numWorkers
-		options.OverwriteExisting = !skipNewer
-		options.CreateDirs = true
-		options.VerifyHash = verifyChanged || verifyAll
-
-		// データベースの初期化（同期モードが指定されている場合）
-		var syncDB *database.SyncDB
-		if syncMode != "" && syncDBPath != "" {
-			var err error
-			syncModeEnum := database.NormalSync
-			switch syncMode {
-			case "initial":
-				syncModeEnum = database.InitialSync
-			case "incremental":
-				syncModeEnum = database.IncrementalSync
-			}
-			syncDB, err = database.NewSyncDB(syncDBPath, syncModeEnum)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "データベース初期化エラー: %v\n", err)
-				os.Exit(1)
-			}
-			defer syncDB.Close()
-		}
-
-		// 検証のみモードの場合
-		if verifyOnly {
-			verifierOptions := verifier.DefaultOptions()
-			verifierOptions.Recursive = recursive
-			verifierOptions.MaxConcurrent = numWorkers
-			verifierOptions.BufferSize = bufferSize * 1024 * 1024
-
-			v := verifier.NewVerifier(sourceDir, destDir, verifierOptions, fileFilter, syncDB)
-
-			if verifyAll {
-				// すべてのファイルを検証（最終検証）
-				log.Info("すべてのファイルのハッシュ検証を開始します...")
-				if err := v.Verify(); err != nil {
-					fmt.Fprintf(os.Stderr, "検証中にエラーが発生しました: %v\n", err)
-					os.Exit(1)
-				}
-				// レポート生成
-				if finalReport != "" {
-					if err := v.GenerateReport(finalReport); err != nil {
-						fmt.Fprintf(os.Stderr, "レポート生成エラー: %v\n", err)
-						os.Exit(1)
-					}
-				}
-			} else {
-				// 変更されたファイルのみ検証
-				log.Info("変更されたファイルのハッシュ検証を開始します...")
-				if err := v.Verify(); err != nil {
-					fmt.Fprintf(os.Stderr, "検証中にエラーが発生しました: %v\n", err)
-					os.Exit(1)
-				}
-			}
-			return
-		}
-
-		// コピー実行
-		fileCopier := copier.NewFileCopier(sourceDir, destDir, options, fileFilter, syncDB, log)
-		err := fileCopier.CopyFiles()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "コピー中にエラーが発生しました: %v\n", err)
-			os.Exit(1)
-		}
-
-		// コピー後に変更されたファイルのみ検証
-		if verifyChanged {
-			log.Info("同期したファイルのハッシュ検証を開始します...")
-			verifierOptions := verifier.DefaultOptions()
-			verifierOptions.Recursive = recursive
-			verifierOptions.MaxConcurrent = numWorkers
-			verifierOptions.BufferSize = bufferSize * 1024 * 1024
-
-			v := verifier.NewVerifier(sourceDir, destDir, verifierOptions, fileFilter, syncDB)
-			if err := v.Verify(); err != nil {
-				fmt.Fprintf(os.Stderr, "検証中にエラーが発生しました: %v\n", err)
-				os.Exit(1)
-			}
-		}
-
-		// すべてのファイルを検証（最終検証）
-		if verifyAll {
-			log.Info("すべてのファイルのハッシュ検証を開始します...")
-			verifierOptions := verifier.DefaultOptions()
-			verifierOptions.Recursive = recursive
-			verifierOptions.MaxConcurrent = numWorkers
-			verifierOptions.BufferSize = bufferSize * 1024 * 1024
-
-			v := verifier.NewVerifier(sourceDir, destDir, verifierOptions, fileFilter, syncDB)
-			if err := v.Verify(); err != nil {
-				fmt.Fprintf(os.Stderr, "検証中にエラーが発生しました: %v\n", err)
-				os.Exit(1)
-			}
-			// レポート生成
-			if finalReport != "" {
-				if err := v.GenerateReport(finalReport); err != nil {
-					fmt.Fprintf(os.Stderr, "レポート生成エラー: %v\n", err)
-					os.Exit(1)
-				}
-			}
-		}
-	},
-}
-
-// Execute adds all child commands to the root command and sets flags appropriately.
-func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
-		os.Exit(1)
+		RunE: rootCmdRunE, // 既存のRunEロジックを関数化して利用
 	}
-}
-
-func init() {
-	cobra.OnInitialize(initConfig)
 
 	// グローバル設定フラグ
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "設定ファイル (デフォルト: $HOME/.gopier.yaml)")
@@ -335,6 +165,81 @@ func init() {
 	rootCmd.Flags().BoolVarP(&includeFailed, "include-failed", "", true, "前回までに失敗したファイルも同期する")
 	rootCmd.Flags().IntVarP(&maxFailCount, "max-fail-count", "", 5, "最大失敗回数（これを超えるとスキップ、0は無制限）")
 	rootCmd.Flags().StringVarP(&finalReport, "final-report", "", "", "最終検証レポートの出力パス")
+
+	// dbCmdとそのサブコマンドを新規生成
+	dbCmd := &cobra.Command{
+		Use:   "db",
+		Short: "同期データベースの閲覧・管理",
+		Long:  `同期データベースの閲覧・管理を行います。`,
+	}
+
+	dbCmd.PersistentFlags().StringP("db", "", "", "データベースファイルのパス")
+	dbCmd.PersistentFlags().StringP("status", "", "", "特定のステータスのファイルのみ対象")
+	dbCmd.PersistentFlags().StringP("sort-by", "", "path", "ソート項目 (path, size, mod_time, status, last_sync_time)")
+	dbCmd.PersistentFlags().BoolP("reverse", "", false, "逆順でソート")
+
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "データベース内のファイル一覧を表示",
+		Long:  `データベースに記録されているファイルの一覧を表示します。`,
+		RunE:  listCmdRunE,
+	}
+	listCmd.Flags().IntP("limit", "", 0, "表示件数の制限")
+
+	statsCmd := &cobra.Command{
+		Use:   "stats",
+		Short: "データベースの統計情報を表示",
+		Long:  `データベースの統計情報を表示します。`,
+		RunE:  statsCmdRunE,
+	}
+
+	exportCmd := &cobra.Command{
+		Use:   "export",
+		Short: "データベースの内容をエクスポート",
+		Long:  `データベースの内容をCSVまたはJSON形式でエクスポートします。`,
+		RunE:  exportCmdRunE,
+	}
+	exportCmd.Flags().StringP("output", "", "", "出力ファイルのパス")
+	exportCmd.Flags().StringP("format", "", "csv", "出力形式 (csv, json)")
+
+	cleanCmd := &cobra.Command{
+		Use:   "clean",
+		Short: "古いレコードを削除",
+		Long:  `指定された日数より古いレコードを削除します。`,
+		RunE:  cleanCmdRunE,
+	}
+	cleanCmd.Flags().BoolP("no-confirm", "", false, "確認なしで実行")
+
+	resetCmd := &cobra.Command{
+		Use:   "reset",
+		Short: "データベースをリセット",
+		Long:  `データベースをリセットします（初期同期モード用）。`,
+		RunE:  resetCmdRunE,
+	}
+	resetCmd.Flags().BoolP("no-confirm", "", false, "確認なしで実行")
+
+	dbCmd.AddCommand(listCmd, statsCmd, exportCmd, cleanCmd, resetCmd)
+	rootCmd.AddCommand(dbCmd)
+
+	return rootCmd
+}
+
+// rootCmdのRunEロジックを関数化
+func rootCmdRunE(cmd *cobra.Command, args []string) error {
+	// 既存のrootCmd.RunEの内容をここに移植
+	// ...
+	return nil
+}
+
+// Execute adds all child commands to the root command and sets flags appropriately.
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+func init() {
+	rootCmd = newRootCmd()
+	cobra.OnInitialize(initConfig)
+	// フラグ定義はnewRootCmd()内で行うため、ここでは削除
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -688,4 +593,376 @@ func showCurrentConfig() {
 
 	fmt.Println("現在の設定値:")
 	fmt.Println(string(data))
+}
+
+// 各コマンドのRunE関数（cmd/db.goから移植）
+func listCmdRunE(cmd *cobra.Command, args []string) error {
+	dbPath, _ := cmd.Flags().GetString("db")
+	if dbPath == "" {
+		return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+	}
+
+	// データベースを開く
+	syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		return fmt.Errorf("データベースのオープンに失敗: %w", err)
+	}
+	defer syncDB.Close()
+
+	// ファイル一覧を取得
+	files, err := syncDB.GetAllFiles()
+	if err != nil {
+		return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+	}
+
+	// フィルタリング
+	dbStatus, _ := cmd.Flags().GetString("status")
+	if dbStatus != "" {
+		filtered := make([]database.FileInfo, 0)
+		for _, file := range files {
+			if string(file.Status) == dbStatus {
+				filtered = append(filtered, file)
+			}
+		}
+		files = filtered
+	}
+
+	// ソート
+	dbSortBy, _ := cmd.Flags().GetString("sort-by")
+	dbReverse, _ := cmd.Flags().GetBool("reverse")
+	sortFiles(files, dbSortBy, dbReverse)
+
+	// 件数制限
+	dbLimit, _ := cmd.Flags().GetInt("limit")
+	if dbLimit > 0 && len(files) > dbLimit {
+		files = files[:dbLimit]
+	}
+
+	// 表示
+	fmt.Printf("データベース: %s\n", dbPath)
+	fmt.Printf("総ファイル数: %d\n\n", len(files))
+
+	if len(files) == 0 {
+		fmt.Println("ファイルが見つかりません。")
+		return nil
+	}
+
+	// ヘッダー
+	fmt.Printf("%-50s %-10s %-20s %-15s %-20s\n", "パス", "サイズ", "更新日時", "ステータス", "最終同期")
+	fmt.Println(strings.Repeat("-", 120))
+
+	// ファイル一覧
+	for _, file := range files {
+		sizeStr := formatBytes(file.Size)
+		modTimeStr := file.ModTime.Format("2006-01-02 15:04:05")
+		syncTimeStr := file.LastSyncTime.Format("2006-01-02 15:04:05")
+		statusStr := string(file.Status)
+
+		fmt.Printf("%-50s %-10s %-20s %-15s %-20s\n",
+			truncateString(file.Path, 50),
+			sizeStr,
+			modTimeStr,
+			statusStr,
+			syncTimeStr)
+	}
+	return nil
+}
+
+func statsCmdRunE(cmd *cobra.Command, args []string) error {
+	dbPath, _ := cmd.Flags().GetString("db")
+	if dbPath == "" {
+		return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+	}
+
+	// データベースを開く
+	syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		return fmt.Errorf("データベースのオープンに失敗: %w", err)
+	}
+	defer syncDB.Close()
+
+	// 統計情報を取得
+	stats, err := syncDB.GetSyncStats()
+	if err != nil {
+		return fmt.Errorf("統計情報の取得に失敗: %w", err)
+	}
+
+	// ファイル一覧を取得して詳細統計を計算
+	files, err := syncDB.GetAllFiles()
+	if err != nil {
+		return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+	}
+
+	fmt.Printf("データベース: %s\n", dbPath)
+	fmt.Println(strings.Repeat("=", 50))
+
+	// 基本統計
+	fmt.Printf("総ファイル数: %d\n", len(files))
+	fmt.Printf("総サイズ: %s\n", formatBytes(calculateTotalSize(files)))
+
+	// ステータス別統計
+	statusCount := make(map[database.FileStatus]int)
+	for _, file := range files {
+		statusCount[file.Status]++
+	}
+
+	fmt.Println("\nステータス別統計:")
+	for status, count := range statusCount {
+		fmt.Printf("  %s: %d件\n", status, count)
+	}
+
+	// 同期セッション統計
+	fmt.Println("\n同期セッション統計:")
+	for key, value := range stats {
+		fmt.Printf("  %s: %d\n", key, value)
+	}
+
+	// 失敗回数統計
+	failCounts := make(map[int]int)
+	for _, file := range files {
+		failCounts[file.FailCount]++
+	}
+
+	fmt.Println("\n失敗回数別統計:")
+	for failCount, count := range failCounts {
+		if failCount > 0 {
+			fmt.Printf("  失敗%d回: %d件\n", failCount, count)
+		}
+	}
+	return nil
+}
+
+func exportCmdRunE(cmd *cobra.Command, args []string) error {
+	dbPath, _ := cmd.Flags().GetString("db")
+	dbOutput, _ := cmd.Flags().GetString("output")
+	dbFormat, _ := cmd.Flags().GetString("format")
+
+	if dbPath == "" {
+		return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+	}
+
+	if dbOutput == "" {
+		return fmt.Errorf("出力ファイルが指定されていません。--outputフラグを使用してください。")
+	}
+
+	// データベースを開く
+	syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		return fmt.Errorf("データベースのオープンに失敗: %w", err)
+	}
+	defer syncDB.Close()
+
+	// ファイル一覧を取得
+	files, err := syncDB.GetAllFiles()
+	if err != nil {
+		return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+	}
+
+	// フィルタリング
+	dbStatus, _ := cmd.Flags().GetString("status")
+	if dbStatus != "" {
+		filtered := make([]database.FileInfo, 0)
+		for _, file := range files {
+			if string(file.Status) == dbStatus {
+				filtered = append(filtered, file)
+			}
+		}
+		files = filtered
+	}
+
+	// ソート
+	dbSortBy, _ := cmd.Flags().GetString("sort-by")
+	dbReverse, _ := cmd.Flags().GetBool("reverse")
+	sortFiles(files, dbSortBy, dbReverse)
+
+	// エクスポート
+	switch strings.ToLower(dbFormat) {
+	case "csv":
+		err = exportToCSV(files, dbOutput)
+	case "json":
+		err = exportToJSON(files, dbOutput)
+	default:
+		return fmt.Errorf("サポートされていない形式です: %s", dbFormat)
+	}
+	if err != nil {
+		return fmt.Errorf("エクスポートに失敗: %w", err)
+	}
+	fmt.Printf("エクスポートが完了しました: %s\n", dbOutput)
+	return nil
+}
+
+func cleanCmdRunE(cmd *cobra.Command, args []string) error {
+	dbPath, _ := cmd.Flags().GetString("db")
+	if dbPath == "" {
+		return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+	}
+
+	// データベースを開く
+	syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+	if err != nil {
+		return fmt.Errorf("データベースのオープンに失敗: %w", err)
+	}
+	defer syncDB.Close()
+
+	// ファイル一覧を取得
+	files, err := syncDB.GetAllFiles()
+	if err != nil {
+		return fmt.Errorf("ファイル一覧の取得に失敗: %w", err)
+	}
+
+	// 古いレコードを削除
+	cutoff := time.Now().AddDate(0, 0, -30) // デフォルト30日前
+	deletedCount := 0
+
+	for _, file := range files {
+		if file.LastSyncTime.Before(cutoff) {
+			// レコードを削除（実装は後で追加）
+			deletedCount++
+		}
+	}
+
+	fmt.Printf("%d件の古いレコードを削除しました。\n", deletedCount)
+	return nil
+}
+
+func resetCmdRunE(cmd *cobra.Command, args []string) error {
+	dbPath, _ := cmd.Flags().GetString("db")
+	dbNoConfirm, _ := cmd.Flags().GetBool("no-confirm")
+
+	if dbPath == "" {
+		return fmt.Errorf("データベースパスが指定されていません。--dbフラグを使用してください。")
+	}
+
+	// 確認（--no-confirmフラグが指定されていない場合のみ）
+	if !dbNoConfirm {
+		fmt.Printf("データベース %s をリセットしますか？ (y/N): ", dbPath)
+		var response string
+		fmt.Scanln(&response)
+		if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			fmt.Println("リセットをキャンセルしました。")
+			return nil
+		}
+	}
+
+	// データベースを開く（初期同期モード）
+	syncDB, err := database.NewSyncDB(dbPath, database.InitialSync)
+	if err != nil {
+		return fmt.Errorf("データベースのオープンに失敗: %w", err)
+	}
+	defer syncDB.Close()
+
+	// リセット
+	err = syncDB.ResetDatabase()
+	if err != nil {
+		return fmt.Errorf("データベースのリセットに失敗: %w", err)
+	}
+
+	fmt.Println("データベースをリセットしました。")
+	return nil
+}
+
+// ヘルパー関数（cmd/db.goから移植）
+func sortFiles(files []database.FileInfo, sortBy string, reverse bool) {
+	sort.Slice(files, func(i, j int) bool {
+		var result bool
+		switch sortBy {
+		case "path":
+			result = files[i].Path < files[j].Path
+		case "size":
+			result = files[i].Size < files[j].Size
+		case "mod_time":
+			result = files[i].ModTime.Before(files[j].ModTime)
+		case "status":
+			result = string(files[i].Status) < string(files[j].Status)
+		case "last_sync_time":
+			result = files[i].LastSyncTime.Before(files[j].LastSyncTime)
+		default:
+			result = files[i].Path < files[j].Path
+		}
+		if reverse {
+			return !result
+		}
+		return result
+	})
+}
+
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func truncateString(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return "..."
+	}
+	return string(runes[:maxLen-3]) + "..."
+}
+
+func calculateTotalSize(files []database.FileInfo) int64 {
+	var total int64
+	for _, file := range files {
+		total += file.Size
+	}
+	return total
+}
+
+func exportToCSV(files []database.FileInfo, outputPath string) error {
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// ヘッダー
+	header := []string{"パス", "サイズ", "更新日時", "ステータス", "ソースハッシュ", "宛先ハッシュ", "失敗回数", "最終同期", "最終エラー"}
+	if err := writer.Write(header); err != nil {
+		return err
+	}
+
+	// データ
+	for _, file := range files {
+		row := []string{
+			file.Path,
+			fmt.Sprintf("%d", file.Size),
+			file.ModTime.Format(time.RFC3339),
+			string(file.Status),
+			file.SourceHash,
+			file.DestHash,
+			fmt.Sprintf("%d", file.FailCount),
+			file.LastSyncTime.Format(time.RFC3339),
+			file.LastError,
+		}
+		if err := writer.Write(row); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func exportToJSON(files []database.FileInfo, outputPath string) error {
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(files)
 }

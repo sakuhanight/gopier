@@ -21,8 +21,16 @@ THE SOFTWARE.
 */
 package main
 
-import "github.com/sakuhanight/gopier/cmd"
+import (
+	"fmt"
+	"os"
+
+	"github.com/sakuhanight/gopier/cmd"
+)
 
 func main() {
-	cmd.Execute()
+	if err := cmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
