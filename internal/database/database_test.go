@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"go.etcd.io/bbolt"
 )
 
 func TestNewSyncDB(t *testing.T) {
@@ -796,5 +798,233 @@ func TestSyncSession_EdgeCases(t *testing.T) {
 	}
 	if stats == nil {
 		t.Error("統計情報がnilです")
+	}
+}
+
+// TestNewSyncDB_InvalidPath は無効なパスでのデータベース作成をテスト
+func TestNewSyncDB_InvalidPath(t *testing.T) {
+	// 権限のないディレクトリでのテスト
+	_, err := NewSyncDB("/root/invalid/test.db", NormalSync)
+	if err == nil {
+		t.Error("権限のないディレクトリでエラーが発生しませんでした")
+	}
+
+	// 空のパスでのテスト
+	_, err = NewSyncDB("", NormalSync)
+	if err == nil {
+		t.Error("空のパスでエラーが発生しませんでした")
+	}
+}
+
+// TestAddFile_InvalidData は無効なデータでのファイル追加をテスト
+func TestAddFile_InvalidData(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	// 無効なJSONデータを直接データベースに書き込む
+	err = db.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(fileSyncBucket)
+		if bucket == nil {
+			return fmt.Errorf("バケットが見つかりません")
+		}
+
+		// 無効なJSONデータを書き込み
+		invalidJSON := []byte("invalid json data")
+		return bucket.Put([]byte("invalid.txt"), invalidJSON)
+	})
+
+	if err != nil {
+		t.Fatalf("無効なデータの書き込みに失敗: %v", err)
+	}
+
+	// 無効なデータを取得しようとする
+	_, err = db.GetFile("invalid.txt")
+	if err == nil {
+		t.Error("無効なJSONデータでエラーが発生しませんでした")
+	}
+}
+
+// TestUpdateFileStatus_NonExistentFile は存在しないファイルのステータス更新をテスト
+func TestUpdateFileStatus_NonExistentFile(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	// 存在しないファイルのステータスを更新
+	err = db.UpdateFileStatus("nonexistent.txt", StatusFailed, "test error")
+	if err != nil {
+		t.Errorf("存在しないファイルのステータス更新に失敗: %v", err)
+	}
+
+	// ファイルが作成されていることを確認
+	fileInfo, err := db.GetFile("nonexistent.txt")
+	if err != nil {
+		t.Errorf("作成されたファイルの取得に失敗: %v", err)
+	}
+
+	if fileInfo.Status != StatusFailed {
+		t.Errorf("ステータスが正しく設定されていません: 期待=%s, 実際=%s", StatusFailed, fileInfo.Status)
+	}
+}
+
+// TestUpdateFileHash_NonExistentFile は存在しないファイルのハッシュ更新をテスト
+func TestUpdateFileHash_NonExistentFile(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	// 存在しないファイルのハッシュを更新
+	err = db.UpdateFileHash("nonexistent.txt", "source-hash", "dest-hash")
+	if err == nil {
+		t.Error("存在しないファイルのハッシュ更新でエラーが発生しませんでした")
+	}
+}
+
+// TestIncrementFailCount_NonExistentFile は存在しないファイルの失敗回数増加をテスト
+func TestIncrementFailCount_NonExistentFile(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	// 存在しないファイルの失敗回数を増加
+	_, err = db.IncrementFailCount("nonexistent.txt")
+	if err == nil {
+		t.Error("存在しないファイルの失敗回数増加でエラーが発生しませんでした")
+	}
+}
+
+// TestDatabaseConcurrentAccess は並行アクセスのテスト
+func TestDatabaseConcurrentAccess(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	const numGoroutines = 10
+	const operationsPerGoroutine = 100
+	done := make(chan bool, numGoroutines)
+
+	// 複数のゴルーチンで同時に操作を実行
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer func() { done <- true }()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				filePath := fmt.Sprintf("goroutine_%d/file_%d.txt", id, j)
+
+				// ファイルを追加
+				fileInfo := FileInfo{
+					Path:         filePath,
+					Size:         int64(j * 1024),
+					ModTime:      time.Now(),
+					Status:       StatusSuccess,
+					SourceHash:   fmt.Sprintf("hash_%d_%d", id, j),
+					DestHash:     fmt.Sprintf("hash_%d_%d", id, j),
+					FailCount:    0,
+					LastSyncTime: time.Now(),
+					LastError:    "",
+				}
+
+				if err := db.AddFile(fileInfo); err != nil {
+					t.Errorf("並行処理でのファイル追加エラー: %v", err)
+					return
+				}
+
+				// ファイルを取得
+				if _, err := db.GetFile(filePath); err != nil {
+					t.Errorf("並行処理でのファイル取得エラー: %v", err)
+					return
+				}
+
+				// ステータスを更新
+				if err := db.UpdateFileStatus(filePath, StatusFailed, "test error"); err != nil {
+					t.Errorf("並行処理でのステータス更新エラー: %v", err)
+					return
+				}
+			}
+		}(i)
+	}
+
+	// すべてのゴルーチンの完了を待つ
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+
+	// すべてのファイルが追加されていることを確認
+	allFiles, err := db.GetAllFiles()
+	if err != nil {
+		t.Fatalf("ファイル一覧の取得に失敗: %v", err)
+	}
+
+	expectedCount := numGoroutines * operationsPerGoroutine
+	if len(allFiles) != expectedCount {
+		t.Errorf("並行処理後のファイル数が期待値と異なります: 期待=%d, 実際=%d", expectedCount, len(allFiles))
+	}
+}
+
+// TestDatabaseErrorRecovery はエラーからの回復をテスト
+func TestDatabaseErrorRecovery(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	// 正常なファイルを追加
+	fileInfo := FileInfo{
+		Path:         "test.txt",
+		Size:         1024,
+		ModTime:      time.Now(),
+		Status:       StatusSuccess,
+		SourceHash:   "test-hash",
+		DestHash:     "test-hash",
+		FailCount:    0,
+		LastSyncTime: time.Now(),
+		LastError:    "",
+	}
+
+	if err := db.AddFile(fileInfo); err != nil {
+		t.Fatalf("ファイル追加に失敗: %v", err)
+	}
+
+	// データベースを閉じる
+	db.Close()
+
+	// 同じデータベースを再オープン
+	db2, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベースの再オープンに失敗: %v", err)
+	}
+	defer db2.Close()
+
+	// ファイルが復旧されていることを確認
+	retrievedFile, err := db2.GetFile("test.txt")
+	if err != nil {
+		t.Fatalf("ファイルの復旧確認に失敗: %v", err)
+	}
+
+	if retrievedFile.Path != fileInfo.Path {
+		t.Errorf("復旧されたファイルのパスが一致しません: 期待=%s, 実際=%s", fileInfo.Path, retrievedFile.Path)
 	}
 }
