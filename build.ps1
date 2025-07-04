@@ -82,6 +82,19 @@ function Build-Project {
     }
     
     try {
+        # メモリ使用量を最適化
+        $env:GOGC = "50"  # ガベージコレクションをより頻繁に実行
+        $env:GOMEMLIMIT = "512MiB"  # メモリ制限を設定
+        
+        # ビルドキャッシュをクリア
+        go clean -cache
+        
+        # 依存関係を事前にダウンロード
+        Write-ColorOutput "依存関係をダウンロード中..." "Yellow"
+        go mod download
+        
+        # ビルド実行
+        Write-ColorOutput "Goビルド実行中..." "Yellow"
         go build -ldflags $LDFlags -o $BinaryName
         if ($LASTEXITCODE -eq 0) {
             if (Test-Path $BinaryName) {

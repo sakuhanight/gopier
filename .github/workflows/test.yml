@@ -27,6 +27,10 @@ jobs:
   test:
     runs-on: ${{ inputs.platform }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
+    # Windows環境でのメモリ最適化
+    env:
+      GOGC: 50
+      GOMEMLIMIT: 512MiB
     
     steps:
       - name: Checkout code
@@ -71,12 +75,30 @@ jobs:
           if (Test-Path "gopier.exe") { Remove-Item "gopier.exe" -Force }
           # Kill hanging processes
           Get-Process | Where-Object {$_.ProcessName -like "*go*" -or $_.ProcessName -like "*gopier*"} | Stop-Process -Force -ErrorAction SilentlyContinue
+          
+          # メモリ使用量を確認
+          Write-Host "Available memory: $((Get-Counter '\Memory\Available MBytes').CounterSamples.CookedValue) MB"
+          Write-Host "Total memory: $((Get-Counter '\Memory\Committed MBytes').CounterSamples.CookedValue) MB"
         shell: pwsh
 
       - name: Build (Windows only)
         if: runner.os == 'Windows'
         run: |
-          echo "Building..."
+          echo "Building with memory optimization..."
+          
+          # メモリ使用量を最適化
+          set GOGC=50
+          set GOMEMLIMIT=512MiB
+          
+          # ビルドキャッシュをクリア
+          go clean -cache
+          
+          # 依存関係を事前にダウンロード
+          echo "Downloading dependencies..."
+          go mod download
+          
+          # ビルド実行
+          echo "Running build..."
           build.ps1 build
           if %ERRORLEVEL% neq 0 (
             echo "Build failed with exit code: %ERRORLEVEL%"
@@ -92,6 +114,7 @@ jobs:
             exit /b 1
           )
         shell: cmd
+        timeout-minutes: 15
 
       - name: Run tests
         run: |
