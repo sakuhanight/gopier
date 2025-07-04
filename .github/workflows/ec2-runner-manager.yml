@@ -1,0 +1,360 @@
+name: EC2 Self-Hosted Runner Manager
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: '実行するアクション'
+        required: true
+        default: 'start'
+        type: choice
+        options:
+          - start
+          - stop
+          - status
+          - cleanup
+      runner_label:
+        description: 'ランナーラベル（start時のみ）'
+        required: false
+        type: string
+        default: 'gopier-runner'
+      instance_type:
+        description: 'EC2インスタンスタイプ'
+        required: false
+        type: string
+        default: 'c5.2xlarge'
+      timeout_minutes:
+        description: 'タイムアウト時間（分）'
+        required: false
+        type: number
+        default: 60
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '.github/workflows/ec2-runner-manager.yml'
+      - 'scripts/aws-ec2-automation.sh'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '.github/workflows/ec2-runner-manager.yml'
+      - 'scripts/aws-ec2-automation.sh'
+
+# デフォルトの権限設定
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+  pull-requests: read
+
+# 環境変数の定義
+env:
+  CI: true
+  GITHUB_ACTIONS: true
+  TESTING: 1
+  GOGC: 100
+
+jobs:
+  # EC2ランナー管理
+  manage-ec2-runner:
+    name: Manage EC2 Self-Hosted Runner
+    runs-on: ubuntu-latest
+    outputs:
+      runner_label: ${{ steps.runner-manager.outputs.runner_label }}
+      ec2_instance_id: ${{ steps.runner-manager.outputs.ec2_instance_id }}
+      runner_status: ${{ steps.runner-manager.outputs.runner_status }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check AWS credentials
+        id: check-aws
+        run: |
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] || [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] || [ -z "${{ secrets.AWS_REGION }}" ]; then
+            echo "AWS credentials not configured. Using GitHub-hosted runners."
+            echo "status=no-aws" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "status=aws-available" >> $GITHUB_OUTPUT
+      
+      - name: Configure AWS credentials
+        if: steps.check-aws.outputs.status == 'aws-available'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup environment variables
+        if: steps.check-aws.outputs.status == 'aws-available'
+        run: |
+          # 環境変数を設定
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+          echo "EC2_INSTANCE_TYPE=${{ github.event.inputs.instance_type || 'c5.2xlarge' }}" >> $GITHUB_ENV
+          echo "EC2_IMAGE_ID=${{ secrets.EC2_IMAGE_ID }}" >> $GITHUB_ENV
+          echo "EC2_SUBNET_ID=${{ secrets.EC2_SUBNET_ID }}" >> $GITHUB_ENV
+          echo "EC2_SECURITY_GROUP_ID=${{ secrets.EC2_SECURITY_GROUP_ID }}" >> $GITHUB_ENV
+          echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME }}" >> $GITHUB_ENV
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
+          echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
+
+      - name: Make automation script executable
+        if: steps.check-aws.outputs.status == 'aws-available'
+        run: |
+          chmod +x scripts/aws-ec2-automation.sh
+
+      - name: Execute EC2 runner management
+        id: runner-manager
+        if: steps.check-aws.outputs.status == 'aws-available'
+        run: |
+          ACTION="${{ github.event.inputs.action || 'start' }}"
+          LABEL="${{ github.event.inputs.runner_label || 'gopier-runner' }}"
+          TIMEOUT="${{ github.event.inputs.timeout_minutes || 60 }}"
+          
+          echo "Executing action: $ACTION"
+          echo "Runner label: $LABEL"
+          echo "Timeout: $TIMEOUT minutes"
+          
+          case $ACTION in
+            start)
+              # ランナー起動
+              echo "Starting EC2 runner..."
+              ./scripts/aws-ec2-automation.sh start --label "$LABEL" --type "$EC2_INSTANCE_TYPE" --timeout "$TIMEOUT"
+              
+              # ランナー情報を取得
+              RUNNER_INFO=$(aws ec2 describe-instances \
+                --filters "Name=tag:RunnerLabel,Values=$LABEL" "Name=instance-state-name,Values=running" \
+                --query 'Reservations[0].Instances[0].[InstanceId,PublicIpAddress]' \
+                --output text 2>/dev/null || echo "None None")
+              
+              if [[ "$RUNNER_INFO" != "None None" ]]; then
+                INSTANCE_ID=$(echo "$RUNNER_INFO" | cut -f1)
+                PUBLIC_IP=$(echo "$RUNNER_INFO" | cut -f2)
+                echo "runner_label=$LABEL" >> $GITHUB_OUTPUT
+                echo "ec2_instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+                echo "runner_status=started" >> $GITHUB_OUTPUT
+                echo "EC2 Runner started successfully:"
+                echo "  Instance ID: $INSTANCE_ID"
+                echo "  Public IP: $PUBLIC_IP"
+                echo "  Label: $LABEL"
+              else
+                echo "runner_status=failed" >> $GITHUB_OUTPUT
+                echo "Failed to start EC2 runner"
+                exit 1
+              fi
+              ;;
+              
+            stop)
+              # ランナー停止
+              echo "Stopping EC2 runners..."
+              ./scripts/aws-ec2-automation.sh stop
+              echo "runner_status=stopped" >> $GITHUB_OUTPUT
+              echo "EC2 runners stopped successfully"
+              ;;
+              
+            status)
+              # ステータス確認
+              echo "Checking EC2 runner status..."
+              ./scripts/aws-ec2-automation.sh status
+              echo "runner_status=checked" >> $GITHUB_OUTPUT
+              ;;
+              
+            cleanup)
+              # リソースクリーンアップ
+              echo "Cleaning up EC2 resources..."
+              ./scripts/aws-ec2-automation.sh cleanup
+              echo "runner_status=cleaned" >> $GITHUB_OUTPUT
+              ;;
+              
+            *)
+              echo "Unknown action: $ACTION"
+              echo "runner_status=error" >> $GITHUB_OUTPUT
+              exit 1
+              ;;
+          esac
+
+      - name: Wait for runner registration
+        if: steps.check-aws.outputs.status == 'aws-available' && steps.runner-manager.outputs.runner_status == 'started'
+        run: |
+          LABEL="${{ steps.runner-manager.outputs.runner_label }}"
+          TIMEOUT="${{ github.event.inputs.timeout_minutes || 60 }}"
+          TIMEOUT_SECONDS=$((TIMEOUT * 60))
+          
+          echo "Waiting for runner registration (timeout: $TIMEOUT minutes)..."
+          
+          # ランナーの登録を待機
+          for i in $(seq 1 $TIMEOUT_SECONDS); do
+            if gh api repos/${{ github.repository }}/actions/runners --jq ".runners[] | select(.labels[].name == \"$LABEL\") | .status" 2>/dev/null | grep -q "online"; then
+              echo "Runner $LABEL is online!"
+              break
+            fi
+            
+            if [ $i -eq $TIMEOUT_SECONDS ]; then
+              echo "Timeout waiting for runner registration"
+              exit 1
+            fi
+            
+            sleep 1
+          done
+
+      - name: Display runner information
+        if: steps.check-aws.outputs.status == 'aws-available' && steps.runner-manager.outputs.runner_status == 'started'
+        run: |
+          LABEL="${{ steps.runner-manager.outputs.runner_label }}"
+          INSTANCE_ID="${{ steps.runner-manager.outputs.ec2_instance_id }}"
+          
+          echo "=== EC2 Runner Information ==="
+          echo "Label: $LABEL"
+          echo "Instance ID: $INSTANCE_ID"
+          echo "Repository: ${{ github.repository }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          
+          # インスタンス詳細情報
+          if [ -n "$INSTANCE_ID" ]; then
+            echo "=== Instance Details ==="
+            aws ec2 describe-instances \
+              --instance-ids "$INSTANCE_ID" \
+              --query 'Reservations[0].Instances[0].[InstanceId,InstanceType,State.Name,PublicIpAddress,PrivateIpAddress,LaunchTime]' \
+              --output table
+          fi
+          
+          # GitHubランナー情報
+          echo "=== GitHub Runner Status ==="
+          gh api repos/${{ github.repository }}/actions/runners --jq ".runners[] | select(.labels[].name == \"$LABEL\") | {name: .name, status: .status, busy: .busy, labels: [.labels[].name]}" 2>/dev/null || echo "Runner not found in GitHub"
+
+  # テストジョブ（ランナーが起動した場合のみ実行）
+  test-on-ec2:
+    name: Test on EC2 Runner
+    runs-on: ${{ needs.manage-ec2-runner.outputs.runner_label || 'ubuntu-latest' }}
+    needs: manage-ec2-runner
+    if: needs.manage-ec2-runner.outputs.runner_status == 'started'
+    strategy:
+      matrix:
+        test-suite: [unit, integration, coverage]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Setup test environment
+        run: |
+          mkdir -p test_output coverage_reports
+          chmod 755 test_output coverage_reports
+          
+          # システム情報を表示
+          echo "=== System Information ==="
+          echo "CPU cores: $(nproc)"
+          echo "Memory: $(free -h)"
+          echo "Disk space: $(df -h)"
+          echo "Go version: $(go version)"
+          echo "Runner: ${{ runner.name }}"
+          echo "Labels: ${{ runner.labels }}"
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}-
+            go-${{ runner.os }}-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run unit tests
+        if: matrix.test-suite == 'unit'
+        run: |
+          echo "Running unit tests on EC2 runner..."
+          go test -v -timeout=15m -parallel=8 ./cmd/... ./internal/...
+
+      - name: Run integration tests
+        if: matrix.test-suite == 'integration'
+        run: |
+          echo "Running integration tests on EC2 runner..."
+          go test -v -timeout=15m -parallel=8 ./tests/...
+
+      - name: Run coverage tests
+        if: matrix.test-suite == 'coverage'
+        run: |
+          echo "Running coverage tests on EC2 runner..."
+          go test -v -coverprofile=coverage.out -timeout=15m -parallel=8 ./cmd/... ./internal/...
+          if [ -f coverage.out ]; then
+            go tool cover -html=coverage.out -o coverage.html
+            go tool cover -func=coverage.out
+          fi
+
+      - name: Upload coverage to Codecov
+        if: matrix.test-suite == 'coverage' && hashFiles('coverage.out') != ''
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: ec2-runner
+          name: codecov-ec2-runner
+          fail_ci_if_error: false
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ランナー停止（テスト完了後）
+  stop-ec2-runner:
+    name: Stop EC2 Runner
+    runs-on: ubuntu-latest
+    needs: [manage-ec2-runner, test-on-ec2]
+    if: always() && needs.manage-ec2-runner.outputs.runner_status == 'started'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup environment variables
+        run: |
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+          echo "EC2_INSTANCE_TYPE=${{ secrets.EC2_INSTANCE_TYPE }}" >> $GITHUB_ENV
+          echo "EC2_IMAGE_ID=${{ secrets.EC2_IMAGE_ID }}" >> $GITHUB_ENV
+          echo "EC2_SUBNET_ID=${{ secrets.EC2_SUBNET_ID }}" >> $GITHUB_ENV
+          echo "EC2_SECURITY_GROUP_ID=${{ secrets.EC2_SECURITY_GROUP_ID }}" >> $GITHUB_ENV
+          echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME }}" >> $GITHUB_ENV
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
+          echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
+
+      - name: Make automation script executable
+        run: chmod +x scripts/aws-ec2-automation.sh
+
+      - name: Stop EC2 runner
+        run: |
+          echo "Stopping EC2 runner after tests..."
+          ./scripts/aws-ec2-automation.sh stop
+          echo "EC2 runner stopped successfully"
+
+      - name: Verify runner cleanup
+        run: |
+          echo "Verifying runner cleanup..."
+          sleep 30  # ランナーの完全停止を待機
+          
+          # 実行中のインスタンスを確認
+          RUNNING_INSTANCES=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=*GitHub-Runner*" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].InstanceId' \
+            --output text)
+          
+          if [ -n "$RUNNING_INSTANCES" ]; then
+            echo "Warning: Some runners are still running: $RUNNING_INSTANCES"
+          else
+            echo "All EC2 runners have been stopped successfully"
+          fi 

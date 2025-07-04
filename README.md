@@ -23,6 +23,36 @@ GopierはGo言語で実装された、高速・堅牢なファイル同期ツー
 
 ---
 
+## AWS/EC2管理（新機能）
+
+### 全自動統合管理スクリプト
+
+AWS/EC2環境の管理を完全自動化する統合スクリプトを提供しています：
+
+```bash
+# 完全自動設定（推奨）
+./scripts/aws-ec2-automation.sh auto-setup
+
+# EC2ランナー管理
+./scripts/aws-ec2-automation.sh start    # ランナー起動
+./scripts/aws-ec2-automation.sh stop     # ランナー停止
+./scripts/aws-ec2-automation.sh status   # ステータス確認
+
+# リソース管理
+./scripts/aws-ec2-automation.sh cleanup  # リソースクリーンアップ
+./scripts/aws-ec2-automation.sh monitor  # コスト監視設定
+```
+
+#### 主な特徴
+- **完全自動化**: AWS認証情報、GitHub認証情報、リポジトリ情報の自動検出
+- **リソース自動作成**: サブネット、セキュリティグループ、IAMロールの自動設定
+- **GitHub Secrets自動設定**: 必要なSecretsを自動でGitHubに登録
+- **統合管理**: EC2ランナーの起動・停止・ステータス確認を一括管理
+
+詳細な使用方法は [AWS/EC2自動化ドキュメント](docs/AWS_EC2_AUTOMATION.md) を参照してください。
+
+---
+
 ## インストール
 
 ### Goからビルド
