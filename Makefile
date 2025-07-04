@@ -84,12 +84,22 @@ test:
 	@echo "統合テスト実行中..."
 	@go test -v ./tests/... && echo "統合テスト成功" || (echo "統合テスト失敗"; exit 1)
 
-# CI用テスト（並列実行）
+# CI用テスト（並列実行・カバレッジ付き）
 .PHONY: test-ci
 test-ci:
 	@echo "CI用テスト実行中..."
-	@go test -v -parallel=4 -timeout=10m ./cmd/... ./internal/... && echo "ユニットテスト成功" || (echo "ユニットテスト失敗"; exit 1)
-	@go test -v -parallel=2 -timeout=10m ./tests/... && echo "統合テスト成功" || (echo "統合テスト失敗"; exit 1)
+	@echo "=== ユニットテスト ==="
+	@go test -v -parallel=4 -timeout=10m -coverprofile=coverage.out ./cmd/... ./internal/... && echo "✓ ユニットテスト成功" || (echo "✗ ユニットテスト失敗"; exit 1)
+	@echo "=== 統合テスト ==="
+	@go test -v -parallel=2 -timeout=10m ./tests/... && echo "✓ 統合テスト成功" || (echo "✗ 統合テスト失敗"; exit 1)
+	@echo "=== カバレッジレポート生成 ==="
+	@if [ -f coverage.out ]; then \
+		go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTMLレポート生成をスキップしました"; \
+		go tool cover -func=coverage.out || echo "カバレッジ関数レポート生成をスキップしました"; \
+		echo "✓ カバレッジレポート生成完了"; \
+	else \
+		echo "✗ カバレッジファイルが見つかりません"; \
+	fi
 
 # 高速テスト（タイムアウト短縮）
 .PHONY: test-fast
@@ -173,7 +183,7 @@ help:
 	@echo "  release      - リリースビルド（最適化）"
 	@echo "  cross-build  - クロスプラットフォームビルド"
 	@echo "  test         - テスト実行"
-	@echo "  test-ci      - CI用テスト（並列実行）"
+	@echo "  test-ci      - CI用テスト（並列実行・カバレッジ付き）"
 	@echo "  test-fast    - 高速テスト（タイムアウト短縮）"
 	@echo "  test-coverage- テストカバレッジ"
 	@echo "  tidy         - 依存関係の整理"

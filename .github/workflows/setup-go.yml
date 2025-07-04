@@ -15,7 +15,7 @@ on:
 
 jobs:
   setup:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       go-version: ${{ steps.set-go-version.outputs.version }}
     steps:

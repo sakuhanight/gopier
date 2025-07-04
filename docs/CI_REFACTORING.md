@@ -1,94 +1,224 @@
-# CI リファクタリング
-
-> **注意**: このドキュメントはリファクタリングの詳細を記録したものです。現在のCI環境については [CI_ENVIRONMENT.md](CI_ENVIRONMENT.md) を参照してください。
+# CI 改善
 
 ## 概要
 
-このドキュメントでは、gopierプロジェクトのCI（Continuous Integration）システムのリファクタリングについて説明します。
+このドキュメントは、gopierプロジェクトのCI（Continuous Integration）システムの改善について説明します。
 
-## リファクタリング前の問題点
+## 変更内容
 
-1. **重複したワークフロー**: `ci.yml`と`ci-optimized.yml`が似たような機能を持っている
-2. **複雑なWindowsテスト分割**: Windowsテストが過度に細かく分割されている
-3. **メンテナンス性の低さ**: 多くのワークフローファイルが存在し、管理が困難
-4. **効率性の問題**: 一部のテストが重複実行されている
-5. **設定の分散**: 設定が複数のファイルに分散している
+### 1. 新しいワークフローファイル
 
-## リファクタリング内容
+#### `ci.yml`
+- **統合CIワークフロー**: すべてのCI処理を1つのファイルに統合
+- **マトリックス戦略**: 効率的なテスト実行のためのマトリックス戦略を採用
+- **依存関係の最適化**: 共通のセットアップジョブで依存関係を事前ダウンロード
+- **セキュリティスキャン**: 包括的なセキュリティチェックを追加
 
-### 1. 統合されたワークフロー
+#### `test.yml`
+- **再利用可能なテストワークフロー**: 他のワークフローから呼び出し可能
+- **柔軟な設定**: テストタイプ、カバレッジ、タイムアウトを設定可能
+- **プラットフォーム対応**: Linux/macOS/Windows対応
 
-- **`ci-unified.yml`**: 包括的なCIワークフロー
-- **`ci-simple.yml`**: 簡潔で効率的なCIワークフロー
-- **`test-common.yml`**: 再利用可能なテストワークフロー
+#### `benchmark.yml`
+- **効率的なベンチマーク**: 軽量で高速なベンチマーク実行
+- **詳細レポート**: ベンチマーク結果の詳細分析
+- **アーティファクト保存**: 結果の永続化
 
-### 2. 効率性の向上
+#### `security.yml`
+- **多層セキュリティ**: Nancy、govulncheck、gosecを使用
+- **依存関係監査**: 脆弱性の包括的チェック
+- **レポート生成**: セキュリティレポートの自動生成
 
-- **並列実行**: テストを並列実行して時間を短縮
-- **キャッシュ最適化**: 依存関係のキャッシュを改善
-- **メモリ最適化**: Windows環境でのメモリ使用量を最適化
-- **重複削減**: 重複したテスト実行を排除
+#### `lint.yml`
+- **コード品質チェック**: 複数のリンティングツールを使用
+- **フォーマットチェック**: gofmt、goimportsによる一貫性確保
+- **複雑度チェック**: サイクロマチック複雑度の監視
 
-### 3. メンテナンス性の向上
+### 2. Makefileの改善
 
-- **設定の一元化**: 共通設定を一箇所に集約
-- **再利用可能なコンポーネント**: ワークフローを分割して再利用
-- **明確な責任分離**: 各ワークフローの役割を明確化
+#### 改善されたターゲット
+- `test-ci`: CI用テスト（並列実行・カバレッジ付き）
+- カバレッジレポート生成
+- より詳細なエラーメッセージ
 
-## 作成されたファイル
+## 改善点
 
+### 1. パフォーマンス向上
+- **効率的なキャッシュ戦略**: 共通のキャッシュキーを使用
+- **並列実行**: マトリックス戦略による並列処理
+- **メモリ最適化**: Windows環境でのメモリ制限を緩和
+
+### 2. 保守性向上
+- **モジュラー設計**: 再利用可能なワークフロー
+- **設定の一元化**: 環境変数とパラメータの統一
+- **ドキュメント化**: 各ワークフローの目的と使用方法を明確化
+
+### 3. セキュリティ強化
+- **多層防御**: 複数のセキュリティツールを使用
+- **自動脆弱性チェック**: 依存関係の自動監査
+- **セキュリティレポート**: 詳細なセキュリティ分析
+
+### 4. 品質向上
+- **包括的テスト**: ユニットテスト、統合テスト、ベンチマーク
+- **コード品質**: 複数のリンティングツールによる品質チェック
+- **カバレッジ追跡**: 詳細なカバレッジレポート
+
+## 使用方法
+
+### 1. 新しいCIワークフローの実行
+
+```bash
+# CI用テストを実行（カバレッジ付き）
+make test-ci
 ```
-.github/workflows/
-├── ci-unified.yml      # 包括的なCIワークフロー
-├── ci-simple.yml       # 簡潔なCIワークフロー
-└── test-common.yml     # 共通テストワークフロー
 
-docs/
-└── CI_REFACTORING.md   # このファイル
+### 2. 個別ワークフローの実行
 
-scripts/
-└── cleanup-ci.sh       # 古いワークフロー整理スクリプト
+各ワークフローは独立して実行可能です：
+
+```yaml
+# test.ymlの使用例
+- name: Run tests
+  uses: ./.github/workflows/test.yml
+  with:
+    go-version: '1.21'
+    platform: 'self-hosted'
+    test-type: 'unit'
+    coverage: true
+    timeout-minutes: 20
 ```
 
-## 改善効果
+### 3. セキュリティスキャンの実行
 
-### パフォーマンス改善
-- **実行時間**: 30-50%短縮
-- **リソース使用量**: Windows環境で40%削減
-- **並列効率**: 4倍の並列実行で2倍の高速化
+```yaml
+# security.ymlの使用例
+- name: Security scan
+  uses: ./.github/workflows/security.yml
+  with:
+    go-version: '1.21'
+    platform: 'self-hosted'
+    timeout-minutes: 15
+```
 
-### メンテナンス性改善
-- **設定の一元化**: 共通設定を一箇所に集約
-- **再利用性**: ワークフローコンポーネントの再利用
-- **可読性**: 明確な責任分離と構造化
+## 設定
 
-## 移行手順
+### 1. 環境変数
 
-1. **新しいワークフローを有効化**
-   - GitHub Actionsで `ci-simple.yml` を有効化
+```yaml
+env:
+  CI: true
+  GITHUB_ACTIONS: true
+  TESTING: 1
+  GOGC: 100          # ガベージコレクション最適化
+  GOMAXPROCS: 4      # 並列処理数
+```
 
-2. **古いワークフローを整理**
+### 2. キャッシュ設定
+
+```yaml
+- name: Cache Go modules
+  uses: actions/cache@v4
+  with:
+    path: |
+      ~/.cache/go-build
+      ~/go/pkg/mod
+    key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}
+    restore-keys: |
+      ${{ runner.os }}-go-${{ inputs.go-version }}-
+      ${{ runner.os }}-go-
+```
+
+### 3. タイムアウト設定
+
+各ジョブに適切なタイムアウトを設定：
+
+- **テスト**: 10-20分
+- **ベンチマーク**: 30分
+- **セキュリティスキャン**: 15分
+- **リント**: 10分
+
+## 移行ガイド
+
+### 1. 既存ワークフローからの移行
+
+1. **古いワークフローファイルの削除**:
    ```bash
-   ./scripts/cleanup-ci.sh
+   rm .github/workflows/ci-optimized.yml
+   rm .github/workflows/ci-unified.yml
+   rm .github/workflows/ci-simple.yml
+   rm .github/workflows/test-common.yml
+   rm .github/workflows/windows-optimization.yml
+   rm .github/workflows/test-permissions.yml
    ```
 
-3. **設定の確認**
-   - 必要なシークレットが設定されているか確認
-   - 環境変数が適切に設定されているか確認
+2. **新しいワークフローの有効化**:
+   - `ci.yml`をメインのCIワークフローとして設定
+   - 必要に応じて個別ワークフローを使用
 
-4. **テスト実行**
-   ```bash
-   make test-ci
-   ```
+3. **設定の更新**:
+   - シークレットの確認（CODECOV_TOKEN、GIST_SECRET）
+   - ランナー設定の確認
+
+### 2. 段階的移行
+
+1. **フェーズ1**: 新しいワークフローを並行実行
+2. **フェーズ2**: 古いワークフローを無効化
+3. **フェーズ3**: 古いファイルを削除
+
+## トラブルシューティング
+
+### 1. よくある問題
+
+#### メモリ不足エラー
+```yaml
+# Windows環境でのメモリ最適化
+env:
+  GOGC: 100
+  GOMAXPROCS: 4
+  CGO_ENABLED: 0
+```
+
+#### タイムアウトエラー
+```yaml
+# タイムアウトの延長
+timeout-minutes: 30
+```
+
+#### キャッシュエラー
+```yaml
+# キャッシュキーの確認
+key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}
+```
+
+### 2. デバッグ方法
+
+1. **ログの確認**: GitHub Actionsのログを詳細に確認
+2. **ローカルテスト**: `make test-ci`でローカル実行
+3. **設定の確認**: 環境変数とパラメータの設定を確認
+
+## 今後の改善計画
+
+### 1. 短期的改善
+- [ ] カバレッジバッジの自動更新
+- [ ] ベンチマーク結果の可視化
+- [ ] セキュリティレポートの自動通知
+
+### 2. 長期的改善
+- [ ] マルチアーキテクチャ対応
+- [ ] コンテナ化対応
+- [ ] パフォーマンス監視の統合
+
+## 貢献
+
+CIシステムの改善に貢献する場合：
+
+1. **Issueの作成**: 改善提案やバグ報告
+2. **Pull Request**: 具体的な改善実装
+3. **ドキュメント更新**: 使用方法や設定の更新
 
 ## 参考資料
 
-- [CI_ENVIRONMENT.md](CI_ENVIRONMENT.md) - 現在のCI環境ドキュメント
-- [CI_REFACTORING_SUMMARY.md](../CI_REFACTORING_SUMMARY.md) - リファクタリング概要
-- [cleanup-ci.sh](../scripts/cleanup-ci.sh) - 古いワークフロー整理スクリプト
-
----
-
-**最終更新**: 2024年12月
-**バージョン**: 1.0.0
-**担当者**: CI チーム 
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
+- [Go Testing](https://golang.org/pkg/testing/)
+- [Codecov Documentation](https://docs.codecov.io/)
+- [Security Tools](https://github.com/securecodewarrior/gosec) 
