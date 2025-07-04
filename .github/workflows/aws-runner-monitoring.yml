@@ -1,0 +1,248 @@
+name: AWS Runner Monitoring
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # 毎日午前9時（JST）
+    - cron: '0 18 * * *' # 毎日午後6時（JST）
+  workflow_dispatch:     # 手動実行も可能
+  workflow_call:         # 他のワークフローから呼び出し可能
+
+env:
+  AWS_REGION: ap-northeast-1
+
+jobs:
+  monitor-runners:
+    name: Monitor AWS Runners
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    outputs:
+      has_running_instances: ${{ steps.check-instances.outputs.has_running }}
+      monthly_cost: ${{ steps.cost-analysis.outputs.monthly_cost }}
+      instance_count: ${{ steps.check-instances.outputs.count }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq bc curl
+          echo "Dependencies installed successfully"
+      
+      - name: Check script permissions
+        run: |
+          ls -la scripts/monitor-aws-runners.sh
+          chmod +x scripts/monitor-aws-runners.sh
+      
+      - name: Run basic monitoring
+        id: check-instances
+        run: |
+          echo "Running basic monitoring..."
+          ./scripts/monitor-aws-runners.sh --json > monitoring-output.json
+          
+          # 実行中インスタンス数を取得
+          RUNNING_COUNT=$(jq -r '.ec2_instances | map(select(.State.Name == "running")) | length' monitoring-output.json 2>/dev/null || echo "0")
+          echo "count=$RUNNING_COUNT" >> $GITHUB_OUTPUT
+          
+          # 実行中インスタンスがあるかチェック
+          if [[ "$RUNNING_COUNT" -gt 0 ]]; then
+            echo "has_running=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_running=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "Monitoring completed. Running instances: $RUNNING_COUNT"
+      
+      - name: Cost analysis
+        id: cost-analysis
+        run: |
+          echo "Running cost analysis..."
+          COST_DATA=$(./scripts/monitor-aws-runners.sh --cost-analysis --json)
+          
+          # 月間コストを取得
+          MONTHLY_COST=$(echo "$COST_DATA" | jq -r '.cost_analysis.ResultsByTime[0].Total.BlendedCost.Amount // "0"' 2>/dev/null || echo "0")
+          echo "monthly_cost=$MONTHLY_COST" >> $GITHUB_OUTPUT
+          
+          echo "Monthly cost: $${MONTHLY_COST}"
+      
+      - name: Performance check
+        if: steps.check-instances.outputs.has_running == 'true'
+        run: |
+          echo "Running performance check for running instances..."
+          ./scripts/monitor-aws-runners.sh --performance
+      
+      - name: Security check
+        run: |
+          echo "Running security check..."
+          ./scripts/monitor-aws-runners.sh --security
+      
+      - name: Generate monitoring report
+        run: |
+          echo "Generating monitoring report..."
+          
+          # 監視結果をまとめる
+          cat > monitoring-report.md << EOF
+          # AWS Runner Monitoring Report
+          
+          **Generated:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Workflow:** ${{ github.workflow }}
+          **Run ID:** ${{ github.run_id }}
+          
+          ## Summary
+          
+          - **Running Instances:** ${{ steps.check-instances.outputs.count }}
+          - **Monthly Cost:** ${{ steps.cost-analysis.outputs.monthly_cost }} USD
+          - **Region:** ${{ env.AWS_REGION }}
+          
+          ## Details
+          
+          ### Instance Status
+          \`\`\`json
+          $(cat monitoring-output.json | jq '.ec2_instances' 2>/dev/null || echo "[]")
+          \`\`\`
+          
+          ### Cost Analysis
+          \`\`\`json
+          $(cat monitoring-output.json | jq '.cost_analysis' 2>/dev/null || echo "{}")
+          \`\`\`
+          
+          ### Performance Metrics
+          \`\`\`json
+          $(cat monitoring-output.json | jq '.performance' 2>/dev/null || echo "{}")
+          \`\`\`
+          
+          ### Security Status
+          \`\`\`json
+          $(cat monitoring-output.json | jq '.security' 2>/dev/null || echo "[]")
+          \`\`\`
+          EOF
+          
+          echo "Report generated: monitoring-report.md"
+      
+      - name: Upload monitoring artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-runner-monitoring-${{ github.run_number }}
+          path: |
+            monitoring-output.json
+            monitoring-report.md
+          retention-days: 30
+      
+      - name: Comment on PR if running instances found
+        if: github.event_name == 'workflow_dispatch' && steps.check-instances.outputs.has_running == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('monitoring-report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## AWS Runner Monitoring Alert ⚠️
+            
+            Running instances detected! Please review the monitoring report:
+            
+            ${report}
+            
+            **Action Required:** Consider stopping unused instances to reduce costs.`
+            });
+
+  alert-on-high-cost:
+    name: Alert on High Cost
+    runs-on: ubuntu-latest
+    needs: monitor-runners
+    if: needs.monitor-runners.outputs.monthly_cost != '0'
+    
+    steps:
+      - name: Check cost threshold
+        id: cost-check
+        run: |
+          COST=$(echo "${{ needs.monitor-runners.outputs.monthly_cost }}" | sed 's/,//g')
+          THRESHOLD=100
+          
+          if (( $(echo "$COST > $THRESHOLD" | bc -l) )); then
+            echo "cost_exceeded=true" >> $GITHUB_OUTPUT
+            echo "Cost $${COST} exceeds threshold $${THRESHOLD}"
+          else
+            echo "cost_exceeded=false" >> $GITHUB_OUTPUT
+            echo "Cost $${COST} is within threshold $${THRESHOLD}"
+          fi
+      
+      - name: Send cost alert
+        if: steps.cost-check.outputs.cost_exceeded == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const cost = '${{ needs.monitor-runners.outputs.monthly_cost }}';
+            const instances = '${{ needs.monitor-runners.outputs.instance_count }}';
+            
+            // リポジトリのディスカッションに投稿（リポジトリで有効化されている場合）
+            try {
+              await github.rest.repos.createCommitComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: context.sha,
+                body: `## 🚨 High Cost Alert
+            
+            **Monthly Cost:** $${cost} USD
+            **Running Instances:** ${instances}
+            **Threshold:** $100 USD
+            
+            Please review your AWS usage and consider:
+            - Stopping unused instances
+            - Using smaller instance types
+            - Implementing cost optimization strategies
+            
+            [View Monitoring Report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
+              });
+            } catch (error) {
+              console.log('Could not create commit comment:', error.message);
+            }
+            
+            // ワークフロー実行者に通知
+            console.log(`🚨 High cost alert: $${cost} USD this month`);
+            console.log(`Running instances: ${instances}`);
+
+  cleanup-old-artifacts:
+    name: Cleanup Old Artifacts
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+      - name: Delete old monitoring artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'aws-runner-monitoring'
+            });
+            
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+            for (const artifact of artifacts) {
+              const createdAt = new Date(artifact.created_at);
+              if (createdAt < thirtyDaysAgo) {
+                console.log(`Deleting old artifact: ${artifact.name} (created: ${artifact.created_at})`);
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id
+                });
+              }
+            } 
