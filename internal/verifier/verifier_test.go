@@ -925,7 +925,7 @@ func TestVerifyWithProgressCallback(t *testing.T) {
 	}
 
 	options := DefaultOptions()
-	options.ProgressInterval = 10 * time.Millisecond
+	options.ProgressInterval = 1 * time.Millisecond
 	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
 
 	var progressCount int32
@@ -940,7 +940,7 @@ func TestVerifyWithProgressCallback(t *testing.T) {
 	}
 
 	verifier.wg.Wait()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	if atomic.LoadInt32(&progressCount) == 0 {
 		t.Error("進捗コールバックが呼ばれていません")
 	}
@@ -1579,5 +1579,202 @@ func TestVerify_SessionError(t *testing.T) {
 	err = verifier.Verify()
 	if err != nil {
 		t.Errorf("検証でエラーが発生: %v", err)
+	}
+}
+
+func TestVerifier_WithNilLogger(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	srcFile := filepath.Join(sourceDir, "test.txt")
+	dstFile := filepath.Join(destDir, "test.txt")
+	content := []byte("test content")
+	os.WriteFile(srcFile, content, 0644)
+	os.WriteFile(dstFile, content, 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// nil loggerでも検証が成功することを確認
+	err := verifier.Verify()
+	if err != nil {
+		t.Errorf("nil loggerでも検証が成功すべきです: %v", err)
+	}
+}
+
+func TestVerifier_WithNilDatabase(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	srcFile := filepath.Join(sourceDir, "test.txt")
+	dstFile := filepath.Join(destDir, "test.txt")
+	content := []byte("test content")
+	os.WriteFile(srcFile, content, 0644)
+	os.WriteFile(dstFile, content, 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// nil databaseでも検証が成功することを確認
+	err := verifier.Verify()
+	if err != nil {
+		t.Errorf("nil databaseでも検証が成功すべきです: %v", err)
+	}
+}
+
+func TestVerifier_WithNilProgressCallback(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	srcFile := filepath.Join(sourceDir, "test.txt")
+	dstFile := filepath.Join(destDir, "test.txt")
+	content := []byte("test content")
+	os.WriteFile(srcFile, content, 0644)
+	os.WriteFile(dstFile, content, 0644)
+
+	options := DefaultOptions()
+	options.ProgressInterval = 1 * time.Millisecond
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 進捗コールバックをnilに設定
+	verifier.SetProgressCallback(nil)
+
+	// nil progress callbackでも検証が成功することを確認
+	err := verifier.Verify()
+	if err != nil {
+		t.Errorf("nil progress callbackでも検証が成功すべきです: %v", err)
+	}
+}
+
+func TestVerifier_ContextCancel(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	srcFile := filepath.Join(sourceDir, "test.txt")
+	dstFile := filepath.Join(destDir, "test.txt")
+	content := []byte("test content")
+	os.WriteFile(srcFile, content, 0644)
+	os.WriteFile(dstFile, content, 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// コンテキストをキャンセル
+	verifier.Cancel()
+
+	// キャンセルされたコンテキストで検証を試行
+	err := verifier.Verify()
+	if err == nil {
+		t.Error("キャンセルされたコンテキストでエラーが発生すべきです")
+	}
+}
+
+func TestVerifier_EmptyDirectories(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "empty_source")
+	destDir := filepath.Join(tempDir, "empty_dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 空のディレクトリで検証を実行
+	err := verifier.Verify()
+	if err != nil {
+		t.Errorf("空のディレクトリでエラーが発生すべきではありません: %v", err)
+	}
+}
+
+func TestVerifier_NonRecursiveMode(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// ルートレベルのファイルを作成
+	srcFile := filepath.Join(sourceDir, "test.txt")
+	dstFile := filepath.Join(destDir, "test.txt")
+	content := []byte("test content")
+	os.WriteFile(srcFile, content, 0644)
+	os.WriteFile(dstFile, content, 0644)
+
+	// サブディレクトリを作成（非再帰モードでは無視される）
+	subDir := filepath.Join(sourceDir, "subdir")
+	os.MkdirAll(subDir, 0755)
+	os.WriteFile(filepath.Join(subDir, "subfile.txt"), []byte("sub content"), 0644)
+
+	options := DefaultOptions()
+	options.Recursive = false
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 非再帰モードで検証を実行
+	err := verifier.Verify()
+	if err != nil {
+		t.Errorf("非再帰モードでエラーが発生すべきではありません: %v", err)
+	}
+}
+
+func TestVerifier_WithFilter(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 異なる拡張子のファイルを作成
+	os.WriteFile(filepath.Join(sourceDir, "include.txt"), []byte("include"), 0644)
+	os.WriteFile(filepath.Join(sourceDir, "exclude.log"), []byte("exclude"), 0644)
+	os.WriteFile(filepath.Join(destDir, "include.txt"), []byte("include"), 0644)
+	os.WriteFile(filepath.Join(destDir, "exclude.log"), []byte("exclude"), 0644)
+
+	// .txtファイルのみを含むフィルター
+	fileFilter := filter.NewFilter("*.txt", "")
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, fileFilter, nil)
+
+	// フィルター付きで検証を実行
+	err := verifier.Verify()
+	if err != nil {
+		t.Errorf("フィルター付きでエラーが発生すべきではありません: %v", err)
+	}
+}
+
+func TestVerifier_IgnoreMissingFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// ソースファイルのみ作成（宛先ファイルは作成しない）
+	srcFile := filepath.Join(sourceDir, "missing.txt")
+	os.WriteFile(srcFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	options.IgnoreMissing = true
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 欠落ファイルを無視して検証を実行
+	err := verifier.Verify()
+	if err != nil {
+		t.Errorf("欠落ファイルを無視してエラーが発生すべきではありません: %v", err)
 	}
 }

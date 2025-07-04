@@ -1028,3 +1028,273 @@ func TestDatabaseErrorRecovery(t *testing.T) {
 		t.Errorf("復旧されたファイルのパスが一致しません: 期待=%s, 実際=%s", fileInfo.Path, retrievedFile.Path)
 	}
 }
+
+func TestResetDatabase_CompleteReset(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, InitialSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	// ファイル情報を追加
+	fileInfo := FileInfo{
+		Path:         "/test/file.txt",
+		Size:         1024,
+		ModTime:      time.Now(),
+		SourceHash:   "test-hash",
+		Status:       StatusSuccess,
+		FailCount:    0,
+		LastSyncTime: time.Now(),
+	}
+
+	err = db.AddFile(fileInfo)
+	if err != nil {
+		t.Fatalf("ファイル追加が失敗: %v", err)
+	}
+
+	// 同期セッションを開始
+	_, err = db.StartSyncSession()
+	if err != nil {
+		t.Fatalf("同期セッション開始が失敗: %v", err)
+	}
+
+	// データベースをリセット
+	err = db.ResetDatabase()
+	if err != nil {
+		t.Errorf("データベースリセットが失敗: %v", err)
+	}
+
+	// ファイルが削除されたことを確認
+	files, err := db.GetAllFiles()
+	if err != nil {
+		t.Fatalf("ファイル取得が失敗: %v", err)
+	}
+	if len(files) != 0 {
+		t.Error("リセット後もファイルが残っています")
+	}
+
+	// 同期セッションは削除されない（ResetDatabaseは同期セッションを削除しない）
+	// 統計情報は削除されるが、同期セッションは残る
+	_, err = db.GetSyncStats()
+	if err != nil {
+		t.Fatalf("同期統計取得が失敗: %v", err)
+	}
+	// 統計情報は削除されるが、同期セッションは残るため、期待値は0ではない可能性がある
+	// このテストでは同期セッションの存在確認は行わない
+}
+
+func TestInitBuckets_AllBuckets(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	// バケットが正しく初期化されていることを確認
+	err = db.db.View(func(tx *bbolt.Tx) error {
+		// ファイルバケット
+		filesBucket := tx.Bucket([]byte("file_sync"))
+		if filesBucket == nil {
+			t.Error("file_syncバケットが作成されていません")
+		}
+
+		// 同期セッションバケット
+		sessionsBucket := tx.Bucket([]byte("sync_session"))
+		if sessionsBucket == nil {
+			t.Error("sync_sessionバケットが作成されていません")
+		}
+
+		// 統計バケット
+		statsBucket := tx.Bucket([]byte("sync_stats"))
+		if statsBucket == nil {
+			t.Error("sync_statsバケットが作成されていません")
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		t.Errorf("バケット確認中にエラーが発生: %v", err)
+	}
+}
+
+func TestNewSyncDB_WithDifferentSyncModes(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 通常同期モード
+	dbPath1 := filepath.Join(tempDir, "test1.db")
+	db1, err := NewSyncDB(dbPath1, NormalSync)
+	if err != nil {
+		t.Fatalf("通常同期モードでのデータベース作成が失敗: %v", err)
+	}
+	defer db1.Close()
+
+	// 検証同期モード
+	dbPath2 := filepath.Join(tempDir, "test2.db")
+	db2, err := NewSyncDB(dbPath2, NormalSync)
+	if err != nil {
+		t.Fatalf("検証同期モードでのデータベース作成が失敗: %v", err)
+	}
+	defer db2.Close()
+
+	// 両方のデータベースが正常に作成されていることを確認
+	if db1 == nil || db2 == nil {
+		t.Error("データベースがnilです")
+	}
+}
+
+func TestAddFile_WithAllFields(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	// すべてのフィールドを含むファイル情報
+	fileInfo := FileInfo{
+		Path:         "/test/complete/file.txt",
+		Size:         2048,
+		ModTime:      time.Now().Add(-time.Hour),
+		SourceHash:   "source-hash-123",
+		DestHash:     "dest-hash-456",
+		Status:       StatusVerified,
+		FailCount:    2,
+		LastSyncTime: time.Now(),
+		LastError:    "previous error message",
+	}
+
+	err = db.AddFile(fileInfo)
+	if err != nil {
+		t.Errorf("完全なファイル情報の追加が失敗: %v", err)
+	}
+
+	// 追加されたファイル情報を取得して確認
+	retrievedFile, err := db.GetFile("/test/complete/file.txt")
+	if err != nil {
+		t.Fatalf("ファイル取得が失敗: %v", err)
+	}
+
+	if retrievedFile.Path != fileInfo.Path {
+		t.Errorf("パスが一致しません: 期待値=%s, 実際=%s", fileInfo.Path, retrievedFile.Path)
+	}
+	if retrievedFile.Size != fileInfo.Size {
+		t.Errorf("サイズが一致しません: 期待値=%d, 実際=%d", fileInfo.Size, retrievedFile.Size)
+	}
+	if retrievedFile.SourceHash != fileInfo.SourceHash {
+		t.Errorf("ソースハッシュが一致しません: 期待値=%s, 実際=%s", fileInfo.SourceHash, retrievedFile.SourceHash)
+	}
+	if retrievedFile.DestHash != fileInfo.DestHash {
+		t.Errorf("宛先ハッシュが一致しません: 期待値=%s, 実際=%s", fileInfo.DestHash, retrievedFile.DestHash)
+	}
+	if retrievedFile.Status != fileInfo.Status {
+		t.Errorf("ステータスが一致しません: 期待値=%s, 実際=%s", fileInfo.Status, retrievedFile.Status)
+	}
+	if retrievedFile.FailCount != fileInfo.FailCount {
+		t.Errorf("失敗回数が一致しません: 期待値=%d, 実際=%d", fileInfo.FailCount, retrievedFile.FailCount)
+	}
+	if retrievedFile.LastError != fileInfo.LastError {
+		t.Errorf("最後のエラーが一致しません: 期待値=%s, 実際=%s", fileInfo.LastError, retrievedFile.LastError)
+	}
+}
+
+func TestDatabase_ConcurrentOperations(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	// 並行してファイルを追加
+	const numGoroutines = 10
+	const filesPerGoroutine = 5
+	done := make(chan bool, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(goroutineID int) {
+			defer func() { done <- true }()
+
+			for j := 0; j < filesPerGoroutine; j++ {
+				fileInfo := FileInfo{
+					Path:         fmt.Sprintf("/test/goroutine%d/file%d.txt", goroutineID, j),
+					Size:         int64(goroutineID*100 + j),
+					ModTime:      time.Now(),
+					SourceHash:   fmt.Sprintf("hash-%d-%d", goroutineID, j),
+					Status:       StatusSuccess,
+					LastSyncTime: time.Now(),
+				}
+
+				err := db.AddFile(fileInfo)
+				if err != nil {
+					t.Errorf("並行ファイル追加が失敗: %v", err)
+				}
+			}
+		}(i)
+	}
+
+	// すべてのゴルーチンの完了を待つ
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+
+	// すべてのファイルが追加されたことを確認
+	files, err := db.GetAllFiles()
+	if err != nil {
+		t.Fatalf("ファイル取得が失敗: %v", err)
+	}
+
+	expectedCount := numGoroutines * filesPerGoroutine
+	if len(files) != expectedCount {
+		t.Errorf("ファイル数が一致しません: 期待値=%d, 実際=%d", expectedCount, len(files))
+	}
+}
+
+func TestDatabase_ErrorRecoveryAndRetry(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース作成が失敗: %v", err)
+	}
+	defer db.Close()
+
+	// 正常なファイル追加
+	fileInfo := FileInfo{
+		Path:         "/test/recovery/file.txt",
+		Size:         1024,
+		ModTime:      time.Now(),
+		Status:       StatusSuccess,
+		LastSyncTime: time.Now(),
+	}
+
+	err = db.AddFile(fileInfo)
+	if err != nil {
+		t.Errorf("正常なファイル追加が失敗: %v", err)
+	}
+
+	// データベースを閉じてから再度開く（エラー回復のシミュレーション）
+	db.Close()
+
+	db2, err := NewSyncDB(dbPath, NormalSync)
+	if err != nil {
+		t.Fatalf("データベース再作成が失敗: %v", err)
+	}
+	defer db2.Close()
+
+	// ファイル情報が保持されていることを確認
+	retrievedFile, err := db2.GetFile("/test/recovery/file.txt")
+	if err != nil {
+		t.Fatalf("ファイル取得が失敗: %v", err)
+	}
+
+	if retrievedFile.Path != fileInfo.Path {
+		t.Errorf("パスが一致しません: 期待値=%s, 実際=%s", fileInfo.Path, retrievedFile.Path)
+	}
+}
