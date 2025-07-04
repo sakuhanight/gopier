@@ -74,6 +74,7 @@ verbose: false
 skip_newer: false
 no_progress: false
 preserve_mod_time: true
+preserve_permissions: false
 overwrite_existing: true
 sync_mode: normal
 sync_db_path: sync_state.db
@@ -95,6 +96,8 @@ verify_hash: true
 - `mirror`: ミラーモード（宛先にないファイル削除）
 - `dry_run`: ドライラン（実際にはコピーしない）
 - `verbose`: 詳細ログ
+- `preserve_mod_time`: 更新日時の保持
+- `preserve_permissions`: ファイルアクセス権限の保持（Windowsのみ）
 - `sync_mode`: `normal`/`initial`/`incremental`
 - `sync_db_path`: 同期状態DBファイル
 - `verify_only`/`verify_changed`/`verify_all`: ハッシュ検証
@@ -115,6 +118,7 @@ verify_hash: true
 - `-m, --mirror`: ミラーモード
 - `-n, --dry-run`: ドライラン
 - `-v, --verbose`: 詳細ログ
+- `-p, --preserve-permissions`: ファイルアクセス権限を保持（Windowsのみ）
 - `--verify-only`: コピーせず検証のみ
 - `--verify-changed`: 同期したファイルのみ検証
 - `--verify-all`: すべてのファイルを検証
@@ -395,3 +399,37 @@ MIT License
 ## 作者
 
 @sakuhanight
+
+---
+
+## Windowsファイルアクセス権限コピー機能
+
+GopierはWindows環境でファイルアクセス権限（ACL: Access Control List）のコピー機能をサポートしています。
+
+### 機能概要
+- **Windows専用機能**: この機能はWindows環境でのみ利用可能です
+- **ACLコピー**: ソースファイルのセキュリティ記述子（所有者、グループ、DACL）を宛先ファイルにコピー
+- **ディレクトリ対応**: ファイルとディレクトリの両方で権限コピーが可能
+- **エラーハンドリング**: 権限コピーに失敗してもファイルコピー処理は続行
+
+### 使用方法
+```sh
+# 権限コピーを有効にしてコピー
+./gopier.exe -s ./src -d ./dst --preserve-permissions
+
+# 設定ファイルで有効化
+preserve_permissions: true
+```
+
+### 注意事項
+- **管理者権限**: 一部の権限コピーには管理者権限が必要な場合があります
+- **セキュリティ**: 権限コピーはセキュリティに影響する可能性があるため、デフォルトでは無効です
+- **非Windows環境**: 非Windows環境ではこのオプションは無視され、警告メッセージが表示されます
+- **エラー処理**: 権限コピーに失敗してもファイルコピー処理は継続され、警告としてログに記録されます
+
+### 技術詳細
+- Windows API（`GetFileSecurityW`、`SetFileSecurityW`）を使用
+- DACL（Discretionary Access Control List）、所有者、グループ情報をコピー
+- SACL（System Access Control List）はセキュリティ上の理由でコピーしません
+
+---

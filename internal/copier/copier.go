@@ -13,6 +13,7 @@ import (
 	"github.com/sakuhanight/gopier/internal/filter"
 	"github.com/sakuhanight/gopier/internal/hasher"
 	"github.com/sakuhanight/gopier/internal/logger"
+	"github.com/sakuhanight/gopier/internal/permissions"
 	"github.com/sakuhanight/gopier/internal/stats"
 )
 
@@ -33,35 +34,37 @@ type ProgressCallback func(current, total int64, currentFile string)
 
 // Options はコピーオプションを表す構造体
 type Options struct {
-	BufferSize        int           // コピーバッファサイズ
-	Recursive         bool          // 再帰的にコピーするかどうか
-	PreserveModTime   bool          // 更新日時を保持するかどうか
-	VerifyHash        bool          // ハッシュ検証を行うかどうか
-	HashAlgorithm     string        // ハッシュアルゴリズム
-	OverwriteExisting bool          // 既存ファイルを上書きするかどうか
-	CreateDirs        bool          // 必要なディレクトリを作成するかどうか
-	MaxRetries        int           // 最大再試行回数
-	RetryDelay        time.Duration // 再試行の遅延時間
-	ProgressInterval  time.Duration // 進捗報告の間隔
-	MaxConcurrent     int           // 最大並行コピー数
-	Mode              CopyMode      // コピーモード
+	BufferSize          int           // コピーバッファサイズ
+	Recursive           bool          // 再帰的にコピーするかどうか
+	PreserveModTime     bool          // 更新日時を保持するかどうか
+	PreservePermissions bool          // ファイルアクセス権限を保持するかどうか（Windowsのみ）
+	VerifyHash          bool          // ハッシュ検証を行うかどうか
+	HashAlgorithm       string        // ハッシュアルゴリズム
+	OverwriteExisting   bool          // 既存ファイルを上書きするかどうか
+	CreateDirs          bool          // 必要なディレクトリを作成するかどうか
+	MaxRetries          int           // 最大再試行回数
+	RetryDelay          time.Duration // 再試行の遅延時間
+	ProgressInterval    time.Duration // 進捗報告の間隔
+	MaxConcurrent       int           // 最大並行コピー数
+	Mode                CopyMode      // コピーモード
 }
 
 // DefaultOptions はデフォルトのオプションを返す
 func DefaultOptions() Options {
 	return Options{
-		BufferSize:        32 * 1024 * 1024, // 32MB
-		Recursive:         true,
-		PreserveModTime:   true,
-		VerifyHash:        true,
-		HashAlgorithm:     string(hasher.SHA256),
-		OverwriteExisting: true,
-		CreateDirs:        true,
-		MaxRetries:        3,
-		RetryDelay:        time.Second * 2,
-		ProgressInterval:  time.Second * 1,
-		MaxConcurrent:     4,
-		Mode:              ModeCopy,
+		BufferSize:          32 * 1024 * 1024, // 32MB
+		Recursive:           true,
+		PreserveModTime:     true,
+		PreservePermissions: false, // デフォルトでは無効（セキュリティ上の理由）
+		VerifyHash:          true,
+		HashAlgorithm:       string(hasher.SHA256),
+		OverwriteExisting:   true,
+		CreateDirs:          true,
+		MaxRetries:          3,
+		RetryDelay:          time.Second * 2,
+		ProgressInterval:    time.Second * 1,
+		MaxConcurrent:       4,
+		Mode:                ModeCopy,
 	}
 }
 
@@ -171,14 +174,33 @@ func (fc *FileCopier) CopyFiles() error {
 		if fc.options.CreateDirs {
 			if err := os.MkdirAll(fc.destDir, 0755); err != nil {
 				// loggerでエラー出力
-				if fc.logger != nil {
-					if fc.logger.Verbose {
-						fc.logger.Error("宛先ディレクトリ(%s)の作成エラー: %v", fc.destDir, err)
-					} else {
-						fc.logger.Error("宛先ディレクトリ作成失敗")
-					}
+				if fc.logger != nil && fc.logger.Verbose {
+					fc.logger.Error("宛先ディレクトリ(%s)の作成エラー: %v", fc.destDir, err)
 				}
 				return fmt.Errorf("宛先ディレクトリ(%s)の作成エラー: %w", fc.destDir, err)
+			}
+
+			// ディレクトリアクセス権限の保持（Windowsのみ）
+			if fc.options.PreservePermissions {
+				if permissions.CanCopyPermissions() {
+					if err = permissions.CopyDirectoryPermissions(fc.sourceDir, fc.destDir); err != nil {
+						// loggerでエラー出力（権限コピーエラーは致命的ではない）
+						if fc.logger != nil && fc.logger.Verbose {
+							fc.logger.Warn("ディレクトリ権限のコピーエラー: %s -> %s: %v", fc.sourceDir, fc.destDir, err)
+						}
+						// 権限コピーエラーは警告として記録するが、コピー処理は続行
+					} else {
+						// loggerで成功情報を出力
+						if fc.logger != nil && fc.logger.Verbose {
+							fc.logger.Info("ディレクトリ権限をコピーしました: %s", fc.destDir)
+						}
+					}
+				} else {
+					// loggerで警告出力
+					if fc.logger != nil && fc.logger.Verbose {
+						fc.logger.Warn("ディレクトリ権限のコピーは現在のプラットフォームではサポートされていません")
+					}
+				}
 			}
 		}
 
@@ -286,6 +308,29 @@ func (fc *FileCopier) copyDirectory(sourceDir, destDir string) error {
 				fc.logger.Error("宛先ディレクトリ(%s)の作成エラー: %v", destDir, err)
 			}
 			return fmt.Errorf("宛先ディレクトリ(%s)の作成エラー: %w", destDir, err)
+		}
+
+		// ディレクトリアクセス権限の保持（Windowsのみ）
+		if fc.options.PreservePermissions {
+			if permissions.CanCopyPermissions() {
+				if err = permissions.CopyDirectoryPermissions(sourceDir, destDir); err != nil {
+					// loggerでエラー出力（権限コピーエラーは致命的ではない）
+					if fc.logger != nil && fc.logger.Verbose {
+						fc.logger.Warn("ディレクトリ権限のコピーエラー: %s -> %s: %v", sourceDir, destDir, err)
+					}
+					// 権限コピーエラーは警告として記録するが、コピー処理は続行
+				} else {
+					// loggerで成功情報を出力
+					if fc.logger != nil && fc.logger.Verbose {
+						fc.logger.Info("ディレクトリ権限をコピーしました: %s", destDir)
+					}
+				}
+			} else {
+				// loggerで警告出力
+				if fc.logger != nil && fc.logger.Verbose {
+					fc.logger.Warn("ディレクトリ権限のコピーは現在のプラットフォームではサポートされていません")
+				}
+			}
 		}
 	}
 
@@ -725,6 +770,29 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 				fc.logger.Error("更新日時の設定エラー: %s: %v", destPath, err)
 			}
 			return fmt.Errorf("更新日時の設定エラー: %w", err)
+		}
+	}
+
+	// ファイルアクセス権限の保持（Windowsのみ）
+	if fc.options.PreservePermissions {
+		if permissions.CanCopyPermissions() {
+			if err = permissions.CopyFilePermissions(sourcePath, destPath); err != nil {
+				// loggerでエラー出力（権限コピーエラーは致命的ではない）
+				if fc.logger != nil && fc.logger.Verbose {
+					fc.logger.Warn("ファイル権限のコピーエラー: %s -> %s: %v", sourcePath, destPath, err)
+				}
+				// 権限コピーエラーは警告として記録するが、コピー処理は続行
+			} else {
+				// loggerで成功情報を出力
+				if fc.logger != nil && fc.logger.Verbose {
+					fc.logger.Info("ファイル権限をコピーしました: %s", destPath)
+				}
+			}
+		} else {
+			// loggerで警告出力
+			if fc.logger != nil && fc.logger.Verbose {
+				fc.logger.Warn("ファイル権限のコピーは現在のプラットフォームではサポートされていません")
+			}
 		}
 	}
 

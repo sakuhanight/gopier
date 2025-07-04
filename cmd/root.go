@@ -32,7 +32,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sakuhanight/gopier/internal/copier"
 	"github.com/sakuhanight/gopier/internal/database"
+	"github.com/sakuhanight/gopier/internal/filter"
+	"github.com/sakuhanight/gopier/internal/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -46,21 +49,22 @@ var (
 	BuildTime = "unknown"
 
 	// 基本オプション
-	sourceDir      string
-	destDir        string
-	logFile        string
-	numWorkers     int
-	retryCount     int
-	retryWait      int
-	includePattern string
-	excludePattern string
-	mirror         bool
-	dryRun         bool
-	verbose        bool
-	skipNewer      bool
-	noProgress     bool
-	bufferSize     int
-	recursive      bool
+	sourceDir           string
+	destDir             string
+	logFile             string
+	numWorkers          int
+	retryCount          int
+	retryWait           int
+	includePattern      string
+	excludePattern      string
+	mirror              bool
+	dryRun              bool
+	verbose             bool
+	skipNewer           bool
+	noProgress          bool
+	bufferSize          int
+	recursive           bool
+	preservePermissions bool
 
 	// 同期モード関連
 	syncMode      string
@@ -91,14 +95,15 @@ type Config struct {
 	ExcludePattern string `mapstructure:"exclude_pattern"`
 
 	// 動作設定
-	Recursive         bool `mapstructure:"recursive"`
-	Mirror            bool `mapstructure:"mirror"`
-	DryRun            bool `mapstructure:"dry_run"`
-	Verbose           bool `mapstructure:"verbose"`
-	SkipNewer         bool `mapstructure:"skip_newer"`
-	NoProgress        bool `mapstructure:"no_progress"`
-	PreserveModTime   bool `mapstructure:"preserve_mod_time"`
-	OverwriteExisting bool `mapstructure:"overwrite_existing"`
+	Recursive           bool `mapstructure:"recursive"`
+	Mirror              bool `mapstructure:"mirror"`
+	DryRun              bool `mapstructure:"dry_run"`
+	Verbose             bool `mapstructure:"verbose"`
+	SkipNewer           bool `mapstructure:"skip_newer"`
+	NoProgress          bool `mapstructure:"no_progress"`
+	PreserveModTime     bool `mapstructure:"preserve_mod_time"`
+	PreservePermissions bool `mapstructure:"preserve_permissions"`
+	OverwriteExisting   bool `mapstructure:"overwrite_existing"`
 
 	// 同期設定
 	SyncMode      string `mapstructure:"sync_mode"`
@@ -155,6 +160,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.Flags().BoolVarP(&noProgress, "no-progress", "", false, "進捗表示を無効化")
 	rootCmd.Flags().IntVarP(&bufferSize, "buffer", "b", 8, "バッファサイズ（MB）")
 	rootCmd.Flags().BoolVarP(&recursive, "recursive", "R", true, "サブディレクトリを再帰的にコピー")
+	rootCmd.Flags().BoolVarP(&preservePermissions, "preserve-permissions", "p", false, "ファイルアクセス権限を保持（Windowsのみ）")
 
 	// 同期モード関連のフラグ
 	rootCmd.Flags().StringVarP(&syncMode, "mode", "", "normal", "同期モード (initial:初期同期, incremental:追加同期)")
@@ -294,11 +300,103 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("宛先ディレクトリが指定されていません (--destination または -d)")
 	}
 
-	// 実際のコピー処理はここで実装
-	// 現在はテスト用にダミー実装
-	fmt.Printf("ソース: %s\n", sourceDir)
-	fmt.Printf("宛先: %s\n", destDir)
-	fmt.Println("コピー処理が実行されます（テストモード）")
+	// ソースディレクトリの存在確認
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return fmt.Errorf("ソースディレクトリが存在しません: %s", sourceDir)
+	}
+
+	// ロガーの初期化
+	var log *logger.Logger
+	if logFile != "" {
+		log = logger.NewLogger(logFile, verbose, true)
+	} else {
+		log = logger.NewLogger("", verbose, false)
+	}
+
+	// フィルタの初期化
+	var fileFilter *filter.Filter
+	if includePattern != "" || excludePattern != "" {
+		fileFilter = filter.NewFilter(includePattern, excludePattern)
+	}
+
+	// 同期データベースの初期化
+	var syncDB *database.SyncDB
+	if syncDBPath != "" {
+		var err error
+		dbSyncMode := database.NormalSync
+		if syncMode == "initial" {
+			dbSyncMode = database.InitialSync
+		} else if syncMode == "incremental" {
+			dbSyncMode = database.IncrementalSync
+		}
+		syncDB, err = database.NewSyncDB(syncDBPath, dbSyncMode)
+		if err != nil {
+			return fmt.Errorf("同期データベースの初期化エラー: %w", err)
+		}
+		defer syncDB.Close()
+	}
+
+	// コピーオプションの設定
+	options := copier.DefaultOptions()
+	options.BufferSize = bufferSize * 1024 * 1024 // MBをバイトに変換
+	options.Recursive = recursive
+	options.PreserveModTime = true
+	options.PreservePermissions = preservePermissions
+	options.VerifyHash = verifyChanged || verifyAll
+	options.OverwriteExisting = !skipNewer
+	options.CreateDirs = true
+	options.MaxRetries = retryCount
+	options.RetryDelay = time.Duration(retryWait) * time.Second
+	options.MaxConcurrent = numWorkers
+
+	// 検証モードの設定
+	if verifyOnly {
+		options.Mode = copier.ModeVerify
+	} else if verifyChanged || verifyAll {
+		options.Mode = copier.ModeCopyAndVerify
+	} else {
+		options.Mode = copier.ModeCopy
+	}
+
+	// ドライランの場合
+	if dryRun {
+		log.Info("ドライランモード: 実際のコピーは実行されません")
+		// ドライランでは実際のコピー処理をスキップ
+		return nil
+	}
+
+	// ファイルコピーの実行
+	fileCopier := copier.NewFileCopier(sourceDir, destDir, options, fileFilter, syncDB, log)
+
+	// 進捗表示の設定
+	if !noProgress {
+		fileCopier.SetProgressCallback(func(current, total int64, currentFile string) {
+			if total > 0 {
+				percentage := float64(current) / float64(total) * 100
+				fmt.Printf("\r進捗: %.1f%% (%d/%d) - %s", percentage, current, total, currentFile)
+			}
+		})
+	}
+
+	// コピー処理の実行
+	log.Info("ファイルコピーを開始します")
+	log.Info("ソース: %s", sourceDir)
+	log.Info("宛先: %s", destDir)
+	log.Info("権限コピー: %v", preservePermissions)
+
+	err := fileCopier.CopyFiles()
+	if err != nil {
+		log.Error("ファイルコピーエラー: %v", err)
+		return fmt.Errorf("ファイルコピーエラー: %w", err)
+	}
+
+	// 統計情報の表示
+	stats := fileCopier.GetStats()
+	log.Info("コピー完了")
+	log.Info("コピーされたファイル数: %d", stats.GetCopiedCount())
+	log.Info("スキップされたファイル数: %d", stats.GetSkippedCount())
+	log.Info("失敗したファイル数: %d", stats.GetFailedCount())
+	log.Info("コピーされたバイト数: %d", stats.GetCopiedBytes())
 
 	return nil
 }
@@ -423,14 +521,15 @@ func loadConfig(cmd *cobra.Command) {
 			RetryWait:  5,
 
 			// 動作設定
-			Recursive:         true,
-			Mirror:            false,
-			DryRun:            false,
-			Verbose:           false,
-			SkipNewer:         false,
-			NoProgress:        false,
-			PreserveModTime:   true,
-			OverwriteExisting: true,
+			Recursive:           true,
+			Mirror:              false,
+			DryRun:              false,
+			Verbose:             false,
+			SkipNewer:           false,
+			NoProgress:          false,
+			PreserveModTime:     true,
+			PreservePermissions: false,
+			OverwriteExisting:   true,
 
 			// 同期設定
 			SyncMode:      "normal",
@@ -514,6 +613,9 @@ func bindConfigToFlags(config *Config, cmd *cobra.Command) {
 	if !cmd.Flags().Changed("no-progress") && config.NoProgress {
 		noProgress = config.NoProgress
 	}
+	if !cmd.Flags().Changed("preserve-permissions") && config.PreservePermissions {
+		preservePermissions = config.PreservePermissions
+	}
 
 	// 同期設定
 	if syncMode == "" && config.SyncMode != "" {
@@ -562,14 +664,15 @@ func createDefaultConfig(configPath string) error {
 		RetryWait:  5,
 
 		// 動作設定
-		Recursive:         true,
-		Mirror:            false,
-		DryRun:            false,
-		Verbose:           false,
-		SkipNewer:         false,
-		NoProgress:        false,
-		PreserveModTime:   true,
-		OverwriteExisting: true,
+		Recursive:           true,
+		Mirror:              false,
+		DryRun:              false,
+		Verbose:             false,
+		SkipNewer:           false,
+		NoProgress:          false,
+		PreserveModTime:     true,
+		PreservePermissions: false,
+		OverwriteExisting:   true,
 
 		// 同期設定
 		SyncMode:      "normal",
@@ -631,14 +734,15 @@ func showCurrentConfig() {
 		ExcludePattern: excludePattern,
 
 		// 動作設定
-		Recursive:         recursive,
-		Mirror:            mirror,
-		DryRun:            dryRun,
-		Verbose:           verbose,
-		SkipNewer:         skipNewer,
-		NoProgress:        noProgress,
-		PreserveModTime:   true, // デフォルト値
-		OverwriteExisting: !skipNewer,
+		Recursive:           recursive,
+		Mirror:              mirror,
+		DryRun:              dryRun,
+		Verbose:             verbose,
+		SkipNewer:           skipNewer,
+		NoProgress:          noProgress,
+		PreserveModTime:     true, // デフォルト値
+		PreservePermissions: preservePermissions,
+		OverwriteExisting:   !skipNewer,
 
 		// 同期設定
 		SyncMode:      syncMode,
