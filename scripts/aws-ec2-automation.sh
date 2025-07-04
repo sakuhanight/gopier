@@ -641,8 +641,103 @@ start_runner() {
     # ラベル生成
     local label="${LABEL:-gopier-runner-$(date +%s)}"
     
-    # IAM Instance Profileの検証
-    log_info "IAM Instance Profileを検証中: $EC2_IAM_ROLE_NAME"
+    # IAMロールとInstance Profileの検証
+    log_info "IAMロールとInstance Profileを検証中: $EC2_IAM_ROLE_NAME"
+    
+    # 1. IAMロールの存在確認
+    if ! aws iam get-role --role-name "$EC2_IAM_ROLE_NAME" &>/dev/null; then
+        log_warning "IAMロールが存在しません: $EC2_IAM_ROLE_NAME"
+        log_info "IAMロールとInstance Profileを作成します..."
+        
+        # 信頼ポリシーを作成
+        cat > /tmp/ec2-trust-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "ec2.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+        
+        # IAMロールを作成
+        aws iam create-role \
+            --role-name "$EC2_IAM_ROLE_NAME" \
+            --assume-role-policy-document file:///tmp/ec2-trust-policy.json
+        
+        # EC2用ポリシーを作成
+        cat > /tmp/ec2-policy.json << EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeTags",
+                "ec2:DescribeInstances",
+                "ec2:DescribeRegions",
+                "ec2:DescribeAvailabilityZones",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeVpcs",
+                "ec2:DescribeImages",
+                "ec2:DescribeInstanceStatus",
+                "ec2:DescribeInstanceAttribute",
+                "ec2:DescribeInstanceCreditSpecifications",
+                "ec2:DescribeInstanceTypes",
+                "ec2:DescribeKeyPairs",
+                "ec2:DescribeNetworkInterfaces",
+                "ec2:DescribeNetworkAcls",
+                "ec2:DescribeRouteTables",
+                "ec2:DescribeInternetGateways",
+                "ec2:DescribeNatGateways",
+                "ec2:DescribeVpcEndpoints",
+                "ec2:DescribeVpcPeeringConnections",
+                "ec2:DescribeTransitGateways",
+                "ec2:DescribeTransitGatewayVpcAttachments",
+                "ec2:DescribeTransitGatewayRouteTables",
+                "ec2:DescribeTransitGatewayAttachments",
+                "ec2:DescribeTransitGatewayMulticastDomains",
+                "ec2:DescribeTransitGatewayPeeringAttachments",
+                "ec2:DescribeTransitGatewayConnects",
+                "ec2:DescribeTransitGatewayConnectPeers",
+                "ec2:DescribeTransitGatewayPolicyTables",
+                "ec2:DescribeTransitGatewayRouteTableAnnouncements",
+                "ec2:DescribeTransitGatewayVpcAttachments",
+                "ec2:DescribeTransitGatewayRouteTables",
+                "ec2:DescribeTransitGatewayAttachments",
+                "ec2:DescribeTransitGatewayMulticastDomains",
+                "ec2:DescribeTransitGatewayPeeringAttachments",
+                "ec2:DescribeTransitGatewayConnects",
+                "ec2:DescribeTransitGatewayConnectPeers",
+                "ec2:DescribeTransitGatewayPolicyTables",
+                "ec2:DescribeTransitGatewayRouteTableAnnouncements"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+EOF
+        
+        # ポリシーを作成
+        aws iam create-policy \
+            --policy-name "${EC2_IAM_ROLE_NAME}-policy" \
+            --policy-document file:///tmp/ec2-policy.json
+        
+        # ロールにポリシーをアタッチ
+        aws iam attach-role-policy \
+            --role-name "$EC2_IAM_ROLE_NAME" \
+            --policy-arn "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):policy/${EC2_IAM_ROLE_NAME}-policy"
+        
+        log_success "IAMロールを作成しました: $EC2_IAM_ROLE_NAME"
+    else
+        log_success "IAMロールが存在します: $EC2_IAM_ROLE_NAME"
+    fi
+    
+    # 2. Instance Profileの存在確認と作成
     if ! aws iam get-instance-profile --instance-profile-name "$EC2_IAM_ROLE_NAME" &>/dev/null; then
         log_warning "IAM Instance Profileが存在しません: $EC2_IAM_ROLE_NAME"
         log_info "IAM Instance Profileを作成します..."
@@ -660,10 +755,26 @@ start_runner() {
         }
         
         # 作成完了を待機
-        sleep 5
+        sleep 10
         log_success "IAM Instance Profileを作成しました: $EC2_IAM_ROLE_NAME"
     else
         log_success "IAM Instance Profileが存在します: $EC2_IAM_ROLE_NAME"
+    fi
+    
+    # 3. 最終検証
+    log_info "IAMロールとInstance Profileの最終検証中..."
+    if aws iam get-role --role-name "$EC2_IAM_ROLE_NAME" &>/dev/null; then
+        log_success "✓ IAMロール検証完了: $EC2_IAM_ROLE_NAME"
+    else
+        log_error "✗ IAMロール検証失敗: $EC2_IAM_ROLE_NAME"
+        exit 1
+    fi
+    
+    if aws iam get-instance-profile --instance-profile-name "$EC2_IAM_ROLE_NAME" &>/dev/null; then
+        log_success "✓ IAM Instance Profile検証完了: $EC2_IAM_ROLE_NAME"
+    else
+        log_error "✗ IAM Instance Profile検証失敗: $EC2_IAM_ROLE_NAME"
+        exit 1
     fi
     
     # ユーザーデータスクリプトの作成
