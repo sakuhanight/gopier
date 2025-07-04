@@ -351,6 +351,19 @@ setup_iam_role() {
     # 既存のロールを確認
     if aws iam get-role --role-name "$DEFAULT_IAM_ROLE_NAME" &>/dev/null; then
         log_info "既存のIAMロールを使用: $DEFAULT_IAM_ROLE_NAME"
+        
+        # Instance Profileの存在確認
+        if ! aws iam get-instance-profile --instance-profile-name "$DEFAULT_IAM_ROLE_NAME" &>/dev/null; then
+            log_warning "IAM Instance Profileが存在しません。作成します..."
+            aws iam create-instance-profile --instance-profile-name "$DEFAULT_IAM_ROLE_NAME"
+            aws iam add-role-to-instance-profile \
+                --instance-profile-name "$DEFAULT_IAM_ROLE_NAME" \
+                --role-name "$DEFAULT_IAM_ROLE_NAME"
+            log_success "IAM Instance Profileを作成しました: $DEFAULT_IAM_ROLE_NAME"
+        else
+            log_info "IAM Instance Profileが存在します: $DEFAULT_IAM_ROLE_NAME"
+        fi
+        
         export EC2_IAM_ROLE_NAME="$DEFAULT_IAM_ROLE_NAME"
         return 0
     fi
@@ -586,6 +599,31 @@ start_runner() {
     
     # ラベル生成
     local label="${LABEL:-gopier-runner-$(date +%s)}"
+    
+    # IAM Instance Profileの検証
+    log_info "IAM Instance Profileを検証中: $EC2_IAM_ROLE_NAME"
+    if ! aws iam get-instance-profile --instance-profile-name "$EC2_IAM_ROLE_NAME" &>/dev/null; then
+        log_warning "IAM Instance Profileが存在しません: $EC2_IAM_ROLE_NAME"
+        log_info "IAM Instance Profileを作成します..."
+        
+        # Instance Profileを作成
+        aws iam create-instance-profile --instance-profile-name "$EC2_IAM_ROLE_NAME" 2>/dev/null || {
+            log_warning "Instance Profileの作成に失敗しました（既に存在する可能性があります）"
+        }
+        
+        # ロールをInstance Profileに追加
+        aws iam add-role-to-instance-profile \
+            --instance-profile-name "$EC2_IAM_ROLE_NAME" \
+            --role-name "$EC2_IAM_ROLE_NAME" 2>/dev/null || {
+            log_warning "ロールの追加に失敗しました（既に追加されている可能性があります）"
+        }
+        
+        # 作成完了を待機
+        sleep 5
+        log_success "IAM Instance Profileを作成しました: $EC2_IAM_ROLE_NAME"
+    else
+        log_success "IAM Instance Profileが存在します: $EC2_IAM_ROLE_NAME"
+    fi
     
     # ユーザーデータスクリプトの作成
     local user_data_script

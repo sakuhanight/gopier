@@ -127,6 +127,27 @@ jobs:
           echo "EC2_SECURITY_GROUP_ID: $EC2_SECURITY_GROUP_ID"
           echo "EC2_IAM_ROLE_NAME: $EC2_IAM_ROLE_NAME"
           echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
+          
+          # IAMロールとInstance Profileの検証
+          echo "=== IAM Validation ==="
+          if aws iam get-role --role-name "$EC2_IAM_ROLE_NAME" &>/dev/null; then
+            echo "IAM Role exists: $EC2_IAM_ROLE_NAME"
+          else
+            echo "IAM Role does not exist: $EC2_IAM_ROLE_NAME"
+            exit 1
+          fi
+          
+          if aws iam get-instance-profile --instance-profile-name "$EC2_IAM_ROLE_NAME" &>/dev/null; then
+            echo "IAM Instance Profile exists: $EC2_IAM_ROLE_NAME"
+          else
+            echo "IAM Instance Profile does not exist: $EC2_IAM_ROLE_NAME"
+            echo "Creating IAM Instance Profile..."
+            aws iam create-instance-profile --instance-profile-name "$EC2_IAM_ROLE_NAME"
+            aws iam add-role-to-instance-profile \
+              --instance-profile-name "$EC2_IAM_ROLE_NAME" \
+              --role-name "$EC2_IAM_ROLE_NAME"
+            echo "IAM Instance Profile created: $EC2_IAM_ROLE_NAME"
+          fi
 
       - name: Make automation script executable
         if: steps.check-aws.outputs.status == 'aws-available'
