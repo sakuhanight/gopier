@@ -102,3 +102,7 @@ coverage.html
 
 # Config files
 .gopier.yaml
+
+# AWS Runner configuration
+aws-runner-config.env
+*.env

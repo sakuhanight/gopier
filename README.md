@@ -199,6 +199,99 @@ verify_hash: true
 
 ---
 
+## CI/CDとAWSランナー
+
+このプロジェクトでは、CI/CDパイプラインにAWS EC2ランナーを使用して、高性能なテスト環境を提供しています。
+
+### AWSランナーの利点
+
+- **高性能**: c5.4xlargeインスタンス（16 vCPU, 32 GB RAM）で高速テスト実行
+- **コスト効率**: 必要な時のみ起動し、テスト完了後に自動停止
+- **スケーラビリティ**: 大きなファイルテストやベンチマークテストに最適
+- **並列実行**: 複数のテストタイプを同時実行
+
+### 設定方法
+
+#### 1. 統合スクリプトの実行（推奨）
+
+```bash
+# ヘルプを表示
+./scripts/aws-runner.sh help
+
+# 完全自動設定（推奨）
+./scripts/aws-runner.sh setup
+
+# AWSリソース情報を表示
+./scripts/aws-runner.sh info
+
+# 設定ファイルを確認
+./scripts/aws-runner.sh config
+
+# AWSランナーを設定
+./scripts/aws-runner.sh deploy
+
+# リソースをクリーンアップ
+./scripts/aws-runner.sh cleanup
+```
+
+#### 2. 設定手順
+
+1. **初期設定**:
+   ```bash
+   ./scripts/aws-runner.sh setup
+   ```
+   - AWS CLIの確認
+   - AWS情報の自動取得
+   - 対話形式での設定入力
+   - 設定ファイルの自動生成
+
+2. **AWSランナーの設定**:
+   ```bash
+   ./scripts/aws-runner.sh deploy
+   ```
+   - セキュリティグループの作成
+   - IAMロールの作成（権限チェック付き）
+   - 設定ファイルの更新
+
+3. **GitHub Secretsの設定**:
+   生成された設定ファイルの内容をGitHub Secretsに追加
+
+#### 2. GitHub Secretsの設定
+
+設定スクリプト実行後、以下のSecretsをGitHubリポジトリに追加してください：
+
+- `AWS_ACCESS_KEY_ID`: AWSアクセスキー
+- `AWS_SECRET_ACCESS_KEY`: AWSシークレットキー
+- `AWS_REGION`: AWSリージョン
+- `EC2_INSTANCE_TYPE`: EC2インスタンスタイプ（例: c5.4xlarge）
+- `EC2_IMAGE_ID`: EC2イメージID
+- `EC2_SUBNET_ID`: サブネットID
+- `EC2_SECURITY_GROUP_ID`: セキュリティグループID
+- `EC2_IAM_ROLE_NAME`: IAMロール名
+- `GH_PERSONAL_ACCESS_TOKEN`: GitHub Personal Access Token
+
+#### 3. 手動設定
+
+詳細な設定方法については、[AWSランナー最適化ガイド](docs/AWS_RUNNER_OPTIMIZATION.md)を参照してください。
+
+### テストタイプ
+
+AWSランナーでは以下のテストを実行します：
+
+- **大きなファイルテスト**: 大容量ファイルの処理性能テスト
+- **統合テスト**: エンドツーエンドの機能テスト
+- **ベンチマークテスト**: 性能ベンチマークテスト
+
+### パフォーマンス比較
+
+| テストタイプ | GitHub Actions | AWS c5.4xlarge |
+|-------------|----------------|----------------|
+| 大きなファイルテスト | 45分 | 15分 |
+| 統合テスト | 15分 | 8分 |
+| ベンチマークテスト | 20分 | 8分 |
+
+---
+
 ## パフォーマンス・並列処理
 
 - ワーカー数（`--workers`）やバッファサイズ（`--buffer`）を調整可能

@@ -93,15 +93,13 @@ jobs:
       platform: 'windows-latest'
       timeout-minutes: 35
 
-  # AWSセルフホステッドランナーで大きなファイルテスト
-  aws-large-tests:
-    uses: ./.github/workflows/aws-runner.yml
+  # AWSセルフホステッドランナーで複数テストを実行
+  aws-multi-tests:
+    uses: ./.github/workflows/aws-runner-multi.yml
     with:
       go-version: '1.21'
-      test-type: 'large-files'
-      timeout-minutes: 60
-    # AWS認証情報が設定されている場合のみ実行
-    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+      test-types: 'large-files,integration,benchmark'
+      timeout-minutes: 120
 
   # ビルドジョブ
   build:
@@ -115,7 +113,7 @@ jobs:
       test-windows-go122-integration,
       benchmark-linux,
       benchmark-windows,
-      aws-large-tests
+      aws-multi-tests
     ]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
 

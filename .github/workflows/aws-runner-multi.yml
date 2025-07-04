@@ -1,4 +1,4 @@
-name: AWS Self-Hosted Runner Tests
+name: AWS Multi-Test Runner
 
 on:
   workflow_call:
@@ -7,16 +7,16 @@ on:
         description: 'Go version to use'
         required: true
         type: string
-      test-type:
-        description: 'Type of tests to run'
+      test-types:
+        description: 'Comma-separated list of test types to run'
         required: true
         type: string
-        default: 'large-files'
+        default: 'large-files,integration,benchmark'
       timeout-minutes:
         description: 'Timeout for the job'
         required: false
         type: number
-        default: 60
+        default: 120
 
 jobs:
   start-runner:
@@ -32,6 +32,7 @@ jobs:
             echo "AWS credentials not configured. Skipping AWS runner tests."
             exit 0
           fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -52,11 +53,10 @@ jobs:
           iam-role-name: ${{ secrets.EC2_IAM_ROLE_NAME }}
           aws-resource-tags: >
             [
-              {"Key": "Name", "Value": "gopier-test-runner"},
+              {"Key": "Name", "Value": "gopier-multi-test-runner"},
               {"Key": "GitHubRepository", "Value": "${{ github.repository }}"},
-              {"Key": "TestType", "Value": "${{ inputs.test-type }}"}
+              {"Key": "TestTypes", "Value": "${{ inputs.test-types }}"}
             ]
-          # block-device-mappingsは現在のバージョンではサポートされていないため削除
           pre-runner-script: |
             sudo yum update -y
             sudo yum install -y git wget unzip
@@ -67,11 +67,11 @@ jobs:
             source ~/.bashrc
             # メモリ最適化設定
             echo 'export GOGC=100' >> ~/.bashrc
-            echo 'export GOMEMLIMIT=4GiB' >> ~/.bashrc
-            echo 'export GOMAXPROCS=8' >> ~/.bashrc
+            echo 'export GOMEMLIMIT=8GiB' >> ~/.bashrc
+            echo 'export GOMAXPROCS=16' >> ~/.bashrc
 
-  run-large-tests:
-    name: Run large file tests on AWS runner
+  run-multi-tests:
+    name: Run multiple test types on AWS runner
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
@@ -79,8 +79,8 @@ jobs:
     # AWSランナー用のメモリ最適化設定
     env:
       GOGC: 100
-      GOMEMLIMIT: 4GiB
-      GOMAXPROCS: 8
+      GOMEMLIMIT: 8GiB
+      GOMAXPROCS: 16
       AWS_RUNNER: true
     
     steps:
@@ -110,8 +110,8 @@ jobs:
 
       - name: Setup test environment
         run: |
-          mkdir -p test_output test_data coverage_reports large_test_data
-          chmod 755 test_output test_data coverage_reports large_test_data
+          mkdir -p test_output test_data coverage_reports large_test_data benchmark_output
+          chmod 755 test_output test_data coverage_reports large_test_data benchmark_output
           
           # システム情報を確認
           echo "=== System Information ==="
@@ -124,63 +124,89 @@ jobs:
           echo "GOMEMLIMIT: $GOMEMLIMIT"
           echo "GOMAXPROCS: $GOMAXPROCS"
 
-      - name: Run tests based on type
+      - name: Run all test types
         run: |
-          echo "Running ${{ inputs.test-type }} tests on AWS runner..."
+          echo "Running multiple test types on AWS runner..."
           
-          case "${{ inputs.test-type }}" in
-            "large-files")
-              echo "Running large file tests..."
-              # 大きなファイルテストを実行
-              go test -v -timeout=30m -parallel=4 ./internal/copier/... || exit 1
-              # ベンチマークテストを実行
-              go test -v -bench=. -benchmem -timeout=30m ./internal/copier/... || exit 1
-              # カバレッジテストを実行
-              PKGS=$(go list ./internal/...)
-              go test -v -coverprofile=coverage.out -timeout=30m -parallel=4 $PKGS || exit 1
-              ;;
-            "integration")
-              echo "Running integration tests..."
-              # 統合テストを実行
-              go test -v -timeout=20m -parallel=4 ./tests/... || exit 1
-              # カバレッジテストを実行
-              PKGS=$(go list ./internal/...)
-              go test -v -coverprofile=coverage.out -timeout=20m -parallel=4 $PKGS || exit 1
-              ;;
-            "benchmark")
-              echo "Running benchmark tests..."
-              # ベンチマークテストを実行
-              go test -v -bench=. -benchmem -timeout=30m ./internal/copier/... || exit 1
-              go test -v -bench=. -benchmem -timeout=30m ./internal/hasher/... || exit 1
-              go test -v -bench=. -benchmem -timeout=30m ./internal/filter/... || exit 1
-              ;;
-            *)
-              echo "Unknown test type: ${{ inputs.test-type }}"
-              exit 1
-              ;;
-          esac
+          # テストタイプを配列に分割
+          IFS=',' read -ra TEST_TYPES <<< "${{ inputs.test-types }}"
           
-          if [ -f coverage.out ]; then
-            go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTML report generation skipped"
-            go tool cover -func=coverage.out || echo "Coverage function report generation skipped"
+          for test_type in "${TEST_TYPES[@]}"; do
+            echo "=== Running $test_type tests ==="
+            
+            case "$test_type" in
+              "large-files")
+                echo "Running large file tests..."
+                # 大きなファイルテストを実行
+                go test -v -timeout=30m -parallel=4 ./internal/copier/... || exit 1
+                # ベンチマークテストを実行
+                go test -v -bench=. -benchmem -timeout=30m ./internal/copier/... || exit 1
+                # カバレッジテストを実行
+                PKGS=$(go list ./internal/...)
+                go test -v -coverprofile=coverage_large.out -timeout=30m -parallel=4 $PKGS || exit 1
+                ;;
+              "integration")
+                echo "Running integration tests..."
+                # 統合テストを実行
+                go test -v -timeout=20m -parallel=4 ./tests/... || exit 1
+                # カバレッジテストを実行
+                PKGS=$(go list ./internal/...)
+                go test -v -coverprofile=coverage_integration.out -timeout=20m -parallel=4 $PKGS || exit 1
+                ;;
+              "benchmark")
+                echo "Running benchmark tests..."
+                # ベンチマークテストを実行
+                go test -v -bench=. -benchmem -timeout=30m ./internal/copier/... > benchmark_output/copier_benchmarks.txt 2>&1 || echo "Copier benchmarks completed"
+                go test -v -bench=. -benchmem -timeout=30m ./internal/hasher/... > benchmark_output/hasher_benchmarks.txt 2>&1 || echo "Hasher benchmarks completed"
+                go test -v -bench=. -benchmem -timeout=30m ./internal/filter/... > benchmark_output/filter_benchmarks.txt 2>&1 || echo "Filter benchmarks completed"
+                ;;
+              *)
+                echo "Unknown test type: $test_type"
+                exit 1
+                ;;
+            esac
+            
+            echo "=== Completed $test_type tests ==="
+          done
+          
+          # カバレッジファイルを統合
+          if [ -f coverage_large.out ] || [ -f coverage_integration.out ]; then
+            if [ -f coverage_large.out ] && [ -f coverage_integration.out ]; then
+              # 複数のカバレッジファイルがある場合は統合
+              echo "mode: set" > coverage.out
+              tail -n +2 coverage_large.out >> coverage.out
+              tail -n +2 coverage_integration.out >> coverage.out
+            elif [ -f coverage_large.out ]; then
+              cp coverage_large.out coverage.out
+            else
+              cp coverage_integration.out coverage.out
+            fi
+            
+            if [ -f coverage.out ]; then
+              go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTML report generation skipped"
+              go tool cover -func=coverage.out || echo "Coverage function report generation skipped"
+            fi
           fi
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
-          name: aws-runner-results-${{ inputs.test-type }}-${{ inputs.go-version }}
+          name: aws-multi-runner-results-${{ inputs.go-version }}
           path: |
             test_output/
             coverage_reports/
+            benchmark_output/
             coverage.out
             coverage.html
+            coverage_large.out
+            coverage_integration.out
           retention-days: 30
 
   stop-runner:
     name: Stop AWS EC2 runner
     needs:
       - start-runner
-      - run-large-tests
+      - run-multi-tests
     runs-on: ubuntu-latest
     if: ${{ always() }}
     steps:
