@@ -20,7 +20,7 @@ on:
 
 jobs:
   benchmark:
-    runs-on: self-hosted
+    runs-on: ${{ inputs.platform }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     
     # ベンチマーク用のメモリ最適化設定

@@ -30,7 +30,7 @@ on:
 
 jobs:
   test:
-    runs-on: self-hosted
+    runs-on: ${{ inputs.platform }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     env:
       GOGC: 50
