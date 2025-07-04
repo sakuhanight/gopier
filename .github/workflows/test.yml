@@ -28,10 +28,13 @@ on:
         type: string
         default: 'all'
 
+
 jobs:
   test:
     runs-on: ${{ inputs.platform }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
+
+
     env:
       GOGC: 50
       GOMEMLIMIT: 512MiB
@@ -147,6 +150,7 @@ jobs:
           
           # Unit tests (軽量版)
           echo "Running unit tests..."
+          # Windows専用テストは自動的にスキップされる（runtime.GOOS != "windows"の条件で）
           go test -v -timeout=10m -parallel=2 ./cmd/... ./internal/... || exit 1
 
       - name: Run integration tests

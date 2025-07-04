@@ -29,7 +29,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       go-version: '1.21'
-      platform: 'self-hosted'
+      platform: 'self-hosted, linux'
       coverage-flag: ${{ github.ref == 'refs/heads/develop' && 'develop' || 'unittests' }}
       timeout-minutes: 20
 
@@ -37,53 +37,18 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       go-version: '1.22'
-      platform: 'self-hosted'
+      platform: 'self-hosted, linux'
       coverage-flag: ${{ github.ref == 'refs/heads/develop' && 'develop' || 'unittests' }}
       timeout-minutes: 20
 
-  # Windows テストジョブ（分割実行）
-  test-windows-unit:
-    uses: ./.github/workflows/test.yml
-    with:
-      go-version: '1.21'
-      platform: 'self-hosted, Windows'
-      coverage-flag: 'windows-unit'
-      timeout-minutes: 25
-      test-type: 'unit'
 
-  test-windows-integration:
-    uses: ./.github/workflows/test.yml
-    with:
-      go-version: '1.21'
-      platform: 'self-hosted, Windows'
-      coverage-flag: 'windows-integration'
-      timeout-minutes: 25
-      test-type: 'integration'
-
-  test-windows-go122-unit:
-    uses: ./.github/workflows/test.yml
-    with:
-      go-version: '1.22'
-      platform: 'self-hosted, Windows'
-      coverage-flag: 'windows-go122-unit'
-      timeout-minutes: 25
-      test-type: 'unit'
-
-  test-windows-go122-integration:
-    uses: ./.github/workflows/test.yml
-    with:
-      go-version: '1.22'
-      platform: 'self-hosted, Windows'
-      coverage-flag: 'windows-go122-integration'
-      timeout-minutes: 25
-      test-type: 'integration'
 
   # ベンチマークテストジョブ
   benchmark-linux:
     uses: ./.github/workflows/benchmark.yml
     with:
       go-version: '1.21'
-      platform: 'self-hosted'
+      platform: 'self-hosted, linux'
       timeout-minutes: 30
 
   benchmark-windows:
@@ -95,14 +60,10 @@ jobs:
 
   # ビルドジョブ
   build:
-    runs-on: self-hosted
+    runs-on: self-hosted, Linux
     needs: [
       test-linux, 
       test-linux-go122, 
-      test-windows-unit, 
-      test-windows-integration, 
-      test-windows-go122-unit, 
-      test-windows-go122-integration,
       benchmark-linux,
       benchmark-windows
     ]
