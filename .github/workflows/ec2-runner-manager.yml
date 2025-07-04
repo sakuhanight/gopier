@@ -92,12 +92,31 @@ jobs:
           # 環境変数を設定
           echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
           echo "EC2_INSTANCE_TYPE=${{ github.event.inputs.instance_type || secrets.EC2_INSTANCE_TYPE || 'c5.2xlarge' }}" >> $GITHUB_ENV
-          echo "EC2_IMAGE_ID=${{ secrets.EC2_IMAGE_ID }}" >> $GITHUB_ENV
           echo "EC2_SUBNET_ID=${{ secrets.EC2_SUBNET_ID }}" >> $GITHUB_ENV
           echo "EC2_SECURITY_GROUP_ID=${{ secrets.EC2_SECURITY_GROUP_ID }}" >> $GITHUB_ENV
           echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME }}" >> $GITHUB_ENV
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
           echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
+          
+          # AMI IDの自動取得（設定されていない場合）
+          if [[ -z "${{ secrets.EC2_IMAGE_ID }}" ]]; then
+            echo "EC2_IMAGE_IDが設定されていません。最新のAmazon Linux 2 AMIを自動取得します..."
+            AMI_ID=$(aws ec2 describe-images \
+              --owners amazon \
+              --filters "Name=name,Values=amzn2-ami-hvm-*-x86_64-gp2" "Name=state,Values=available" \
+              --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+              --output text)
+            
+            if [[ -n "$AMI_ID" ]] && [[ "$AMI_ID" != "None" ]]; then
+              echo "EC2_IMAGE_ID=$AMI_ID" >> $GITHUB_ENV
+              echo "最新のAMI IDを取得しました: $AMI_ID"
+            else
+              echo "AMI IDの自動取得に失敗しました"
+              exit 1
+            fi
+          else
+            echo "EC2_IMAGE_ID=${{ secrets.EC2_IMAGE_ID }}" >> $GITHUB_ENV
+          fi
           
           # 環境変数の確認
           echo "=== Environment Variables ==="
@@ -346,12 +365,31 @@ jobs:
         run: |
           echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
           echo "EC2_INSTANCE_TYPE=${{ secrets.EC2_INSTANCE_TYPE || 'c5.2xlarge' }}" >> $GITHUB_ENV
-          echo "EC2_IMAGE_ID=${{ secrets.EC2_IMAGE_ID }}" >> $GITHUB_ENV
           echo "EC2_SUBNET_ID=${{ secrets.EC2_SUBNET_ID }}" >> $GITHUB_ENV
           echo "EC2_SECURITY_GROUP_ID=${{ secrets.EC2_SECURITY_GROUP_ID }}" >> $GITHUB_ENV
           echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME }}" >> $GITHUB_ENV
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
           echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
+          
+          # AMI IDの自動取得（設定されていない場合）
+          if [[ -z "${{ secrets.EC2_IMAGE_ID }}" ]]; then
+            echo "EC2_IMAGE_IDが設定されていません。最新のAmazon Linux 2 AMIを自動取得します..."
+            AMI_ID=$(aws ec2 describe-images \
+              --owners amazon \
+              --filters "Name=name,Values=amzn2-ami-hvm-*-x86_64-gp2" "Name=state,Values=available" \
+              --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+              --output text)
+            
+            if [[ -n "$AMI_ID" ]] && [[ "$AMI_ID" != "None" ]]; then
+              echo "EC2_IMAGE_ID=$AMI_ID" >> $GITHUB_ENV
+              echo "最新のAMI IDを取得しました: $AMI_ID"
+            else
+              echo "AMI IDの自動取得に失敗しました"
+              exit 1
+            fi
+          else
+            echo "EC2_IMAGE_ID=${{ secrets.EC2_IMAGE_ID }}" >> $GITHUB_ENV
+          fi
           
           # 環境変数の確認
           echo "=== Environment Variables ==="

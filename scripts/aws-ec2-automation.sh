@@ -556,6 +556,34 @@ start_runner() {
     
     load_config
     
+    # AMI IDの検証
+    if [[ -n "$EC2_IMAGE_ID" ]]; then
+        log_info "AMI IDを検証中: $EC2_IMAGE_ID"
+        if ! aws ec2 describe-images --image-ids "$EC2_IMAGE_ID" --query 'Images[0].ImageId' --output text &>/dev/null; then
+            log_warning "指定されたAMI IDが無効です: $EC2_IMAGE_ID"
+            log_info "最新のAmazon Linux 2 AMIを自動取得します..."
+            
+            local new_ami_id=$(aws ec2 describe-images \
+                --owners amazon \
+                --filters "Name=name,Values=amzn2-ami-hvm-*-x86_64-gp2" "Name=state,Values=available" \
+                --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+                --output text)
+            
+            if [[ -n "$new_ami_id" ]] && [[ "$new_ami_id" != "None" ]]; then
+                export EC2_IMAGE_ID="$new_ami_id"
+                log_success "新しいAMI IDを設定しました: $EC2_IMAGE_ID"
+            else
+                log_error "AMI IDの自動取得に失敗しました"
+                exit 1
+            fi
+        else
+            log_success "AMI IDが有効です: $EC2_IMAGE_ID"
+        fi
+    else
+        log_error "EC2_IMAGE_IDが設定されていません"
+        exit 1
+    fi
+    
     # ラベル生成
     local label="${LABEL:-gopier-runner-$(date +%s)}"
     
