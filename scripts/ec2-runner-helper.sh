@@ -32,11 +32,15 @@ EC2 Runner Helper Script
     list         - アクティブなランナーを一覧表示
     health-check - ランナーの健全性チェック
     cost-report  - コストレポートを生成
+    setup-iam    - IAM Instance Profileを設定
+    verify-iam   - IAM設定を確認
 
 オプション:
     --repository - GitHubリポジトリ (owner/repo形式)
     --timeout    - タイムアウト時間（分）(デフォルト: 30)
     --dry-run    - 実際の変更を行わずにシミュレーション
+    --role-name  - IAMロール名 (setup-iam用、デフォルト: EC2RunnerRole)
+    --profile-name - インスタンスプロファイル名 (setup-iam用、デフォルト: EC2RunnerRole)
     --help       - このヘルプを表示
 
 環境変数:
@@ -49,6 +53,8 @@ EC2 Runner Helper Script
     $0 monitor --repository owner/repo
     $0 cleanup --dry-run
     $0 list
+    $0 setup-iam --role-name MyRunnerRole --profile-name MyRunnerProfile
+    $0 verify-iam
 EOF
 }
 
@@ -58,10 +64,12 @@ parse_args() {
     REPOSITORY=""
     TIMEOUT_MINUTES=30
     DRY_RUN=false
+    IAM_ROLE_NAME="EC2RunnerRole"
+    IAM_PROFILE_NAME="EC2RunnerRole"
     
     while [[ $# -gt 0 ]]; do
         case $1 in
-            monitor|cleanup|list|health-check|cost-report)
+            monitor|cleanup|list|health-check|cost-report|setup-iam|verify-iam)
                 COMMAND="$1"
                 shift
                 ;;
@@ -76,6 +84,14 @@ parse_args() {
             --dry-run)
                 DRY_RUN=true
                 shift
+                ;;
+            --role-name)
+                IAM_ROLE_NAME="$2"
+                shift 2
+                ;;
+            --profile-name)
+                IAM_PROFILE_NAME="$2"
+                shift 2
                 ;;
             --help|-h)
                 show_help
@@ -335,6 +351,187 @@ health_check() {
     fi
 }
 
+# IAMロールの作成
+create_iam_role() {
+    local role_name="$1"
+    log "IAMロールを作成中: $role_name"
+    
+    # 信頼ポリシー
+    local trust_policy='{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "ec2.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+            }
+        ]
+    }'
+    
+    # ロールの作成
+    if aws iam get-role --role-name "$role_name" &> /dev/null; then
+        log "IAMロール $role_name は既に存在します"
+    else
+        aws iam create-role \
+            --role-name "$role_name" \
+            --assume-role-policy-document "$trust_policy"
+        log "IAMロール $role_name を作成しました"
+    fi
+}
+
+# IAMポリシーの作成とアタッチ
+create_and_attach_policies() {
+    local role_name="$1"
+    log "IAMポリシーを作成・アタッチ中..."
+    
+    # カスタムポリシーの作成
+    local custom_policy='{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "ec2:DescribeInstances",
+                    "ec2:DescribeSecurityGroups",
+                    "ec2:DescribeSubnets",
+                    "ec2:DescribeImages",
+                    "ec2:DescribeTags",
+                    "ec2:DescribeInstanceStatus"
+                ],
+                "Resource": "*"
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                ],
+                "Resource": "arn:aws:logs:*:*:*"
+            }
+        ]
+    }'
+    
+    local policy_name="${role_name}Policy"
+    
+    # ポリシーの作成
+    if aws iam get-policy --policy-arn "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):policy/$policy_name" &> /dev/null; then
+        log "IAMポリシー $policy_name は既に存在します"
+    else
+        aws iam create-policy \
+            --policy-name "$policy_name" \
+            --policy-document "$custom_policy"
+        log "IAMポリシー $policy_name を作成しました"
+    fi
+    
+    # ポリシーのアタッチ
+    aws iam attach-role-policy \
+        --role-name "$role_name" \
+        --policy-arn "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):policy/$policy_name"
+    log "IAMポリシー $policy_name をロール $role_name にアタッチしました"
+    
+    # 管理ポリシーのアタッチ
+    aws iam attach-role-policy \
+        --role-name "$role_name" \
+        --policy-arn "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+    log "AmazonEC2ReadOnlyAccessポリシーをロール $role_name にアタッチしました"
+}
+
+# インスタンスプロファイルの作成
+create_instance_profile() {
+    local role_name="$1"
+    local profile_name="$2"
+    log "インスタンスプロファイルを作成中: $profile_name"
+    
+    # インスタンスプロファイルの作成
+    if aws iam get-instance-profile --instance-profile-name "$profile_name" &> /dev/null; then
+        log "インスタンスプロファイル $profile_name は既に存在します"
+    else
+        aws iam create-instance-profile \
+            --instance-profile-name "$profile_name"
+        log "インスタンスプロファイル $profile_name を作成しました"
+    fi
+    
+    # ロールをインスタンスプロファイルに追加
+    if aws iam get-instance-profile --instance-profile-name "$profile_name" | jq -e ".InstanceProfile.Roles[] | select(.RoleName == \"$role_name\")" &> /dev/null; then
+        log "ロール $role_name は既にインスタンスプロファイル $profile_name に追加されています"
+    else
+        aws iam add-role-to-instance-profile \
+            --instance-profile-name "$profile_name" \
+            --role-name "$role_name"
+        log "ロール $role_name をインスタンスプロファイル $profile_name に追加しました"
+    fi
+}
+
+# IAM設定の確認
+verify_iam_setup() {
+    local profile_name="$1"
+    log "IAM設定を確認中..."
+    
+    # インスタンスプロファイルの確認
+    local profile_arn
+    profile_arn=$(aws iam get-instance-profile --instance-profile-name "$profile_name" --query 'InstanceProfile.Arn' --output text 2>/dev/null || echo "")
+    
+    if [[ -n "$profile_arn" && "$profile_arn" != "None" ]]; then
+        log "✅ インスタンスプロファイル $profile_name が正常に設定されました"
+        log "   ARN: $profile_arn"
+        log "   GitHub Secretsで使用する値: $profile_name"
+        return 0
+    else
+        error "❌ インスタンスプロファイル $profile_name が見つかりません"
+        return 1
+    fi
+}
+
+# IAM設定
+setup_iam() {
+    log "IAM Instance Profileを設定中..."
+    
+    # AWS CLIの確認
+    check_aws_cli
+    
+    # アカウント情報の表示
+    local account_id
+    account_id=$(aws sts get-caller-identity --query 'Account' --output text)
+    log "AWS Account ID: $account_id"
+    log "Region: $AWS_REGION"
+    
+    # 設定の実行
+    create_iam_role "$IAM_ROLE_NAME"
+    create_and_attach_policies "$IAM_ROLE_NAME"
+    create_instance_profile "$IAM_ROLE_NAME" "$IAM_PROFILE_NAME"
+    verify_iam_setup "$IAM_PROFILE_NAME"
+    
+    log "IAM Instance Profileの設定が完了しました"
+    log ""
+    log "GitHub Secretsで以下の値を設定してください:"
+    log "  EC2_IAM_ROLE_NAME: $IAM_PROFILE_NAME"
+    log ""
+    log "注意: インスタンスプロファイルの作成後、反映まで数分かかる場合があります"
+}
+
+# IAM設定の確認
+verify_iam() {
+    log "IAM設定を確認中..."
+    
+    # AWS CLIの確認
+    check_aws_cli
+    
+    # デフォルトのプロファイル名を使用
+    local profile_name="${IAM_PROFILE_NAME:-EC2RunnerRole}"
+    
+    if verify_iam_setup "$profile_name"; then
+        log "✅ IAM設定は正常です"
+    else
+        error "❌ IAM設定に問題があります"
+        log "以下のコマンドでIAM設定を実行してください:"
+        log "  $0 setup-iam --role-name $profile_name --profile-name $profile_name"
+        exit 1
+    fi
+}
+
 # コストレポートの生成
 cost_report() {
     log "コストレポートを生成中..."
@@ -419,6 +616,12 @@ main() {
             ;;
         cost-report)
             cost_report
+            ;;
+        setup-iam)
+            setup_iam
+            ;;
+        verify-iam)
+            verify_iam
             ;;
         *)
             error "不明なコマンド: $COMMAND"
