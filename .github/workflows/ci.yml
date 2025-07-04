@@ -112,57 +112,56 @@ jobs:
       
       - name: Build
         run: |
-          Write-Host "Starting build process..."
-          & .\build.ps1 build
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Build failed with exit code: $LASTEXITCODE"
-            exit $LASTEXITCODE
-          }
-        shell: pwsh
+          echo "Starting build process..."
+          build.ps1 build
+          if %ERRORLEVEL% neq 0 (
+            echo "Build failed with exit code: %ERRORLEVEL%"
+            exit /b %ERRORLEVEL%
+          )
+        shell: cmd
         timeout-minutes: 10
       
       - name: Verify build output
         run: |
-          if (Test-Path "gopier.exe") {
-            Write-Host "✓ Build successful: gopier.exe exists"
-            $size = (Get-Item "gopier.exe").Length / 1MB
-            Write-Host "Executable size: $([math]::Round($size, 2)) MB"
-            & .\gopier.exe --help
-          } else {
-            Write-Host "✗ Build failed: gopier.exe not found"
-            Get-ChildItem -Name
-            exit 1
-          }
-        shell: pwsh
+          if exist "gopier.exe" (
+            echo "✓ Build successful: gopier.exe exists"
+            for %%A in ("gopier.exe") do echo "Executable size: %%~zA bytes"
+            gopier.exe --help
+          ) else (
+            echo "✗ Build failed: gopier.exe not found"
+            dir
+            exit /b 1
+          )
+        shell: cmd
       
       - name: Test
         run: |
-          Write-Host "Starting tests..."
-          $env:CI = "true"
-          $env:GITHUB_ACTIONS = "true"
-          $env:TESTING = "1"
-          & .\build.ps1 test
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Tests failed with exit code: $LASTEXITCODE"
-            exit $LASTEXITCODE
-          }
-          Write-Host "Tests completed successfully"
-        shell: pwsh
+          echo "Starting tests..."
+          set CI=true
+          set GITHUB_ACTIONS=true
+          set TESTING=1
+          build.ps1 test
+          if %ERRORLEVEL% neq 0 (
+            echo "Tests failed with exit code: %ERRORLEVEL%"
+            exit /b %ERRORLEVEL%
+          )
+          echo "Tests completed successfully"
+        shell: cmd
         timeout-minutes: 15
       
       - name: Coverage
         run: |
-          Write-Host "Starting coverage tests..."
-          $env:CI = "true"
-          $env:GITHUB_ACTIONS = "true"
-          $env:TESTING = "1"
-          & .\build.ps1 test-coverage
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Coverage tests failed with exit code: $LASTEXITCODE"
-            exit $LASTEXITCODE
-          }
-          Write-Host "Coverage tests completed successfully"
-        shell: pwsh
+          echo "Starting coverage tests..."
+          set CI=true
+          set GITHUB_ACTIONS=true
+          set TESTING=1
+          build.ps1 test-coverage
+          if %ERRORLEVEL% neq 0 (
+            echo "Coverage tests failed with exit code: %ERRORLEVEL%"
+            exit /b %ERRORLEVEL%
+          )
+          echo "Coverage tests completed successfully"
+        shell: cmd
         timeout-minutes: 15
       
       - name: Verify coverage file
