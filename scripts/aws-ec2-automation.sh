@@ -490,9 +490,35 @@ load_config() {
         log_info "設定ファイルを読み込み中: $CONFIG_FILE"
         source "$CONFIG_FILE"
     else
-        log_error "設定ファイルが見つかりません: $CONFIG_FILE"
-        log_info "auto-setup コマンドを実行して設定を作成してください"
-        exit 1
+        log_info "設定ファイルが見つかりません: $CONFIG_FILE"
+        log_info "環境変数を使用します"
+        
+        # 必要な環境変数の確認
+        local required_vars=(
+            "AWS_REGION"
+            "EC2_INSTANCE_TYPE"
+            "EC2_IMAGE_ID"
+            "EC2_SUBNET_ID"
+            "EC2_SECURITY_GROUP_ID"
+            "EC2_IAM_ROLE_NAME"
+            "GITHUB_REPOSITORY"
+        )
+        
+        local missing_vars=()
+        for var in "${required_vars[@]}"; do
+            if [[ -z "${!var}" ]]; then
+                missing_vars+=("$var")
+            fi
+        done
+        
+        if [[ ${#missing_vars[@]} -gt 0 ]]; then
+            log_error "以下の環境変数が設定されていません:"
+            printf '  - %s\n' "${missing_vars[@]}"
+            log_info "GitHub Actions Secretsまたは環境変数を設定してください"
+            exit 1
+        fi
+        
+        log_success "環境変数による設定読み込み完了"
     fi
 }
 

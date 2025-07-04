@@ -91,13 +91,23 @@ jobs:
         run: |
           # 環境変数を設定
           echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
-          echo "EC2_INSTANCE_TYPE=${{ github.event.inputs.instance_type || 'c5.2xlarge' }}" >> $GITHUB_ENV
+          echo "EC2_INSTANCE_TYPE=${{ github.event.inputs.instance_type || secrets.EC2_INSTANCE_TYPE || 'c5.2xlarge' }}" >> $GITHUB_ENV
           echo "EC2_IMAGE_ID=${{ secrets.EC2_IMAGE_ID }}" >> $GITHUB_ENV
           echo "EC2_SUBNET_ID=${{ secrets.EC2_SUBNET_ID }}" >> $GITHUB_ENV
           echo "EC2_SECURITY_GROUP_ID=${{ secrets.EC2_SECURITY_GROUP_ID }}" >> $GITHUB_ENV
           echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME }}" >> $GITHUB_ENV
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
           echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
+          
+          # 環境変数の確認
+          echo "=== Environment Variables ==="
+          echo "AWS_REGION: $AWS_REGION"
+          echo "EC2_INSTANCE_TYPE: $EC2_INSTANCE_TYPE"
+          echo "EC2_IMAGE_ID: $EC2_IMAGE_ID"
+          echo "EC2_SUBNET_ID: $EC2_SUBNET_ID"
+          echo "EC2_SECURITY_GROUP_ID: $EC2_SECURITY_GROUP_ID"
+          echo "EC2_IAM_ROLE_NAME: $EC2_IAM_ROLE_NAME"
+          echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
 
       - name: Make automation script executable
         if: steps.check-aws.outputs.status == 'aws-available'
@@ -115,6 +125,16 @@ jobs:
           echo "Executing action: $ACTION"
           echo "Runner label: $LABEL"
           echo "Timeout: $TIMEOUT minutes"
+          
+          # スクリプト実行前の環境変数確認
+          echo "=== Script Environment Variables ==="
+          echo "AWS_REGION: $AWS_REGION"
+          echo "EC2_INSTANCE_TYPE: $EC2_INSTANCE_TYPE"
+          echo "EC2_IMAGE_ID: $EC2_IMAGE_ID"
+          echo "EC2_SUBNET_ID: $EC2_SUBNET_ID"
+          echo "EC2_SECURITY_GROUP_ID: $EC2_SECURITY_GROUP_ID"
+          echo "EC2_IAM_ROLE_NAME: $EC2_IAM_ROLE_NAME"
+          echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
           
           case $ACTION in
             start)
@@ -325,13 +345,23 @@ jobs:
       - name: Setup environment variables
         run: |
           echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
-          echo "EC2_INSTANCE_TYPE=${{ secrets.EC2_INSTANCE_TYPE }}" >> $GITHUB_ENV
+          echo "EC2_INSTANCE_TYPE=${{ secrets.EC2_INSTANCE_TYPE || 'c5.2xlarge' }}" >> $GITHUB_ENV
           echo "EC2_IMAGE_ID=${{ secrets.EC2_IMAGE_ID }}" >> $GITHUB_ENV
           echo "EC2_SUBNET_ID=${{ secrets.EC2_SUBNET_ID }}" >> $GITHUB_ENV
           echo "EC2_SECURITY_GROUP_ID=${{ secrets.EC2_SECURITY_GROUP_ID }}" >> $GITHUB_ENV
           echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME }}" >> $GITHUB_ENV
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
           echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
+          
+          # 環境変数の確認
+          echo "=== Environment Variables ==="
+          echo "AWS_REGION: $AWS_REGION"
+          echo "EC2_INSTANCE_TYPE: $EC2_INSTANCE_TYPE"
+          echo "EC2_IMAGE_ID: $EC2_IMAGE_ID"
+          echo "EC2_SUBNET_ID: $EC2_SUBNET_ID"
+          echo "EC2_SECURITY_GROUP_ID: $EC2_SECURITY_GROUP_ID"
+          echo "EC2_IAM_ROLE_NAME: $EC2_IAM_ROLE_NAME"
+          echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
 
       - name: Make automation script executable
         run: chmod +x scripts/aws-ec2-automation.sh
