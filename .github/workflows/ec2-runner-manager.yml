@@ -89,13 +89,52 @@ jobs:
       - name: Setup environment variables
         if: steps.check-aws.outputs.status == 'aws-available'
         run: |
-          # 環境変数を設定
-          echo "AWS_REGION=${{ secrets.AWS_REGION || 'ap-northeast-1' }}" >> $GITHUB_ENV
-          echo "EC2_INSTANCE_TYPE=${{ github.event.inputs.instance_type || secrets.EC2_INSTANCE_TYPE || 'c5.2xlarge' }}" >> $GITHUB_ENV
-          echo "EC2_SUBNET_ID=${{ secrets.EC2_SUBNET_ID }}" >> $GITHUB_ENV
-          echo "EC2_SECURITY_GROUP_ID=${{ secrets.EC2_SECURITY_GROUP_ID }}" >> $GITHUB_ENV
-          echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME || 'gopier-ec2-role' }}" >> $GITHUB_ENV
-          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
+          # デバッグ: Secretsの値を確認（機密情報は隠す）
+          echo "=== Secrets Debug Info ==="
+          echo "EC2_IAM_ROLE_NAME secret length: ${#EC2_IAM_ROLE_NAME}"
+          echo "EC2_SUBNET_ID secret length: ${#EC2_SUBNET_ID}"
+          echo "EC2_SECURITY_GROUP_ID secret length: ${#EC2_SECURITY_GROUP_ID}"
+          echo "EC2_IMAGE_ID secret length: ${#EC2_IMAGE_ID}"
+          
+          # 環境変数を設定（空文字の場合はデフォルト値を使用）
+          if [[ -n "${{ secrets.AWS_REGION }}" ]]; then
+            echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+          else
+            echo "AWS_REGION=ap-northeast-1" >> $GITHUB_ENV
+          fi
+          
+          if [[ -n "${{ github.event.inputs.instance_type }}" ]]; then
+            echo "EC2_INSTANCE_TYPE=${{ github.event.inputs.instance_type }}" >> $GITHUB_ENV
+          elif [[ -n "${{ secrets.EC2_INSTANCE_TYPE }}" ]]; then
+            echo "EC2_INSTANCE_TYPE=${{ secrets.EC2_INSTANCE_TYPE }}" >> $GITHUB_ENV
+          else
+            echo "EC2_INSTANCE_TYPE=c5.2xlarge" >> $GITHUB_ENV
+          fi
+          
+          if [[ -n "${{ secrets.EC2_SUBNET_ID }}" ]]; then
+            echo "EC2_SUBNET_ID=${{ secrets.EC2_SUBNET_ID }}" >> $GITHUB_ENV
+          else
+            echo "EC2_SUBNET_ID=" >> $GITHUB_ENV
+          fi
+          
+          if [[ -n "${{ secrets.EC2_SECURITY_GROUP_ID }}" ]]; then
+            echo "EC2_SECURITY_GROUP_ID=${{ secrets.EC2_SECURITY_GROUP_ID }}" >> $GITHUB_ENV
+          else
+            echo "EC2_SECURITY_GROUP_ID=" >> $GITHUB_ENV
+          fi
+          
+          if [[ -n "${{ secrets.EC2_IAM_ROLE_NAME }}" ]]; then
+            echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME }}" >> $GITHUB_ENV
+          else
+            echo "EC2_IAM_ROLE_NAME=gopier-ec2-role" >> $GITHUB_ENV
+          fi
+          
+          if [[ -n "${{ secrets.GITHUB_TOKEN }}" ]]; then
+            echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
+          else
+            echo "GITHUB_TOKEN=" >> $GITHUB_ENV
+          fi
+          
           echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
           
           # AMI IDの自動取得（設定されていない場合）
@@ -130,6 +169,16 @@ jobs:
           
           # IAMロールとInstance Profileの検証
           echo "=== IAM Validation ==="
+          
+          # IAMロール名の検証
+          if [[ -z "$EC2_IAM_ROLE_NAME" ]]; then
+            echo "ERROR: EC2_IAM_ROLE_NAME is empty or not set"
+            echo "Setting default value: gopier-ec2-role"
+            export EC2_IAM_ROLE_NAME="gopier-ec2-role"
+            echo "EC2_IAM_ROLE_NAME=gopier-ec2-role" >> $GITHUB_ENV
+          fi
+          
+          echo "Using IAM Role Name: $EC2_IAM_ROLE_NAME"
           
           # 1. IAMロールの存在確認
           if aws iam get-role --role-name "$EC2_IAM_ROLE_NAME" &>/dev/null; then
