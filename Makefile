@@ -84,6 +84,19 @@ test:
 	@echo "統合テスト実行中..."
 	@go test -v ./tests/... && echo "統合テスト成功" || (echo "統合テスト失敗"; exit 1)
 
+# CI用テスト（並列実行）
+.PHONY: test-ci
+test-ci:
+	@echo "CI用テスト実行中..."
+	@go test -v -parallel=4 -timeout=10m ./cmd/... ./internal/... && echo "ユニットテスト成功" || (echo "ユニットテスト失敗"; exit 1)
+	@go test -v -parallel=2 -timeout=10m ./tests/... && echo "統合テスト成功" || (echo "統合テスト失敗"; exit 1)
+
+# 高速テスト（タイムアウト短縮）
+.PHONY: test-fast
+test-fast:
+	@echo "高速テスト実行中..."
+	@go test -v -timeout=5m -parallel=4 ./cmd/... ./internal/... && echo "高速テスト成功" || (echo "高速テスト失敗"; exit 1)
+
 # テスト実行（タイムアウト付き）
 .PHONY: test-timeout
 test-timeout:
@@ -160,6 +173,8 @@ help:
 	@echo "  release      - リリースビルド（最適化）"
 	@echo "  cross-build  - クロスプラットフォームビルド"
 	@echo "  test         - テスト実行"
+	@echo "  test-ci      - CI用テスト（並列実行）"
+	@echo "  test-fast    - 高速テスト（タイムアウト短縮）"
 	@echo "  test-coverage- テストカバレッジ"
 	@echo "  tidy         - 依存関係の整理"
 	@echo "  clean        - クリーンアップ"

@@ -22,6 +22,11 @@ on:
         required: false
         type: number
         default: 30
+      test-type:
+        description: 'Type of tests to run (unit, integration, or all)'
+        required: false
+        type: string
+        default: 'all'
 
 jobs:
   test:
@@ -131,22 +136,47 @@ jobs:
         shell: cmd
         timeout-minutes: 15
 
-      - name: Run tests
+      - name: Run unit tests
+        if: inputs.test-type == 'unit' || inputs.test-type == 'all'
         run: |
-          echo "Running tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
+          echo "Running unit tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
           
-          # Unit tests
+          # メモリ最適化設定
+          export GOGC=50
+          export GOMEMLIMIT=256MiB
+          export GOMAXPROCS=2
+          
+          # Unit tests (軽量版)
           echo "Running unit tests..."
-          go test -v ./cmd/... ./internal/... || exit 1
+          go test -v -timeout=10m -parallel=2 ./cmd/... ./internal/... || exit 1
+
+      - name: Run integration tests
+        if: inputs.test-type == 'integration' || inputs.test-type == 'all'
+        run: |
+          echo "Running integration tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
+          
+          # メモリ最適化設定
+          export GOGC=50
+          export GOMEMLIMIT=256MiB
+          export GOMAXPROCS=2
           
           # Integration tests
           echo "Running integration tests..."
-          go test -v ./tests/... || exit 1
+          go test -v -timeout=10m -parallel=2 ./tests/... || exit 1
+
+      - name: Run coverage tests
+        if: inputs.test-type == 'all'
+        run: |
+          echo "Running tests with coverage..."
+          
+          # メモリ最適化設定
+          export GOGC=50
+          export GOMEMLIMIT=256MiB
+          export GOMAXPROCS=2
           
           # Coverage tests
-          echo "Running tests with coverage..."
           PKGS=$(go list ./internal/...)
-          go test -v -coverprofile=coverage.out $PKGS || exit 1
+          go test -v -coverprofile=coverage.out -timeout=10m -parallel=2 $PKGS || exit 1
           
           if [ -f coverage.out ]; then
             go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTML report generation skipped"
@@ -154,6 +184,7 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
+        if: inputs.test-type == 'all' && hashFiles('coverage.out') != ''
         uses: codecov/codecov-action@v3
         with:
           file: ./coverage.out

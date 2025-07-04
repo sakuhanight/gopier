@@ -1,4 +1,4 @@
-name: CI
+name: CI Optimized
 
 on:
   push:
@@ -41,67 +41,71 @@ jobs:
       coverage-flag: ${{ github.ref == 'refs/heads/develop' && 'develop' || 'unittests' }}
       timeout-minutes: 20
 
-  # Windows テストジョブ（分割実行）
-  test-windows-unit:
-    uses: ./.github/workflows/test.yml
+  # Windows テストジョブ（最適化版）
+  test-windows-core:
+    uses: ./.github/workflows/windows-optimization.yml
     with:
       go-version: '1.21'
-      platform: 'windows-latest'
-      coverage-flag: 'windows-unit'
-      timeout-minutes: 25
-      test-type: 'unit'
+      test-packages: './cmd/...'
+      coverage-flag: 'windows-core'
+      timeout-minutes: 15
+
+  test-windows-internal:
+    uses: ./.github/workflows/windows-optimization.yml
+    with:
+      go-version: '1.21'
+      test-packages: './internal/copier/... ./internal/database/... ./internal/filter/...'
+      coverage-flag: 'windows-internal'
+      timeout-minutes: 15
+
+  test-windows-utils:
+    uses: ./.github/workflows/windows-optimization.yml
+    with:
+      go-version: '1.21'
+      test-packages: './internal/hasher/... ./internal/logger/... ./internal/stats/... ./internal/verifier/...'
+      coverage-flag: 'windows-utils'
+      timeout-minutes: 15
 
   test-windows-integration:
-    uses: ./.github/workflows/test.yml
+    uses: ./.github/workflows/windows-optimization.yml
     with:
       go-version: '1.21'
-      platform: 'windows-latest'
+      test-packages: './tests/...'
       coverage-flag: 'windows-integration'
-      timeout-minutes: 25
-      test-type: 'integration'
+      timeout-minutes: 15
 
-  test-windows-go122-unit:
-    uses: ./.github/workflows/test.yml
+  # Go 1.22 Windows テストジョブ（最適化版）
+  test-windows-go122-core:
+    uses: ./.github/workflows/windows-optimization.yml
     with:
       go-version: '1.22'
-      platform: 'windows-latest'
-      coverage-flag: 'windows-go122-unit'
-      timeout-minutes: 25
-      test-type: 'unit'
+      test-packages: './cmd/...'
+      coverage-flag: 'windows-go122-core'
+      timeout-minutes: 15
+
+  test-windows-go122-internal:
+    uses: ./.github/workflows/windows-optimization.yml
+    with:
+      go-version: '1.22'
+      test-packages: './internal/copier/... ./internal/database/... ./internal/filter/...'
+      coverage-flag: 'windows-go122-internal'
+      timeout-minutes: 15
+
+  test-windows-go122-utils:
+    uses: ./.github/workflows/windows-optimization.yml
+    with:
+      go-version: '1.22'
+      test-packages: './internal/hasher/... ./internal/logger/... ./internal/stats/... ./internal/verifier/...'
+      coverage-flag: 'windows-go122-utils'
+      timeout-minutes: 15
 
   test-windows-go122-integration:
-    uses: ./.github/workflows/test.yml
+    uses: ./.github/workflows/windows-optimization.yml
     with:
       go-version: '1.22'
-      platform: 'windows-latest'
+      test-packages: './tests/...'
       coverage-flag: 'windows-go122-integration'
-      timeout-minutes: 25
-      test-type: 'integration'
-
-  # ベンチマークテストジョブ
-  benchmark-linux:
-    uses: ./.github/workflows/benchmark.yml
-    with:
-      go-version: '1.21'
-      platform: 'ubuntu-latest'
-      timeout-minutes: 30
-
-  benchmark-windows:
-    uses: ./.github/workflows/benchmark.yml
-    with:
-      go-version: '1.21'
-      platform: 'windows-latest'
-      timeout-minutes: 35
-
-  # AWSセルフホステッドランナーで大きなファイルテスト
-  aws-large-tests:
-    uses: ./.github/workflows/aws-runner.yml
-    with:
-      go-version: '1.21'
-      test-type: 'large-files'
-      timeout-minutes: 60
-    # AWS認証情報が設定されている場合のみ実行
-    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+      timeout-minutes: 15
 
   # ビルドジョブ
   build:
@@ -109,13 +113,14 @@ jobs:
     needs: [
       test-linux, 
       test-linux-go122, 
-      test-windows-unit, 
-      test-windows-integration, 
-      test-windows-go122-unit, 
-      test-windows-go122-integration,
-      benchmark-linux,
-      benchmark-windows,
-      aws-large-tests
+      test-windows-core, 
+      test-windows-internal, 
+      test-windows-utils, 
+      test-windows-integration,
+      test-windows-go122-core,
+      test-windows-go122-internal,
+      test-windows-go122-utils,
+      test-windows-go122-integration
     ]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
 

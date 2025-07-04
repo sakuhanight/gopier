@@ -1,0 +1,88 @@
+name: Benchmark Tests
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: 'Go version to use'
+        required: true
+        type: string
+      platform:
+        description: 'Platform to run benchmarks on'
+        required: true
+        type: string
+        default: 'ubuntu-latest'
+      timeout-minutes:
+        description: 'Timeout for the job'
+        required: false
+        type: number
+        default: 30
+
+jobs:
+  benchmark:
+    runs-on: ${{ inputs.platform }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    
+    # ベンチマーク用のメモリ最適化設定
+    env:
+      GOGC: 100
+      GOMEMLIMIT: 1GiB
+      GOMAXPROCS: 4
+      BENCHMARK_MODE: true
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ inputs.go-version }}-
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Setup benchmark environment
+        run: |
+          mkdir -p benchmark_output
+          chmod 755 benchmark_output
+          
+          # ベンチマーク用の環境変数を設定
+          echo "GOGC=$GOGC"
+          echo "GOMEMLIMIT=$GOMEMLIMIT"
+          echo "GOMAXPROCS=$GOMAXPROCS"
+          echo "BENCHMARK_MODE=$BENCHMARK_MODE"
+
+      - name: Run benchmark tests
+        run: |
+          echo "Running benchmark tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
+          
+          # ベンチマークテストを実行
+          echo "Running copier benchmarks..."
+          go test -v -bench=. -benchmem -timeout=15m ./internal/copier/... || exit 1
+          
+          # ベンチマーク結果をファイルに保存
+          go test -v -bench=. -benchmem -timeout=15m ./internal/copier/... > benchmark_output/copier_benchmarks.txt 2>&1 || echo "Benchmark output saved"
+          
+          echo "Benchmark tests completed"
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ runner.os }}-${{ inputs.go-version }}
+          path: benchmark_output/
+          retention-days: 7 

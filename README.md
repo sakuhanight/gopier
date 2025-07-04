@@ -220,7 +220,17 @@ verify_hash: true
 
 ### テストの実行
 ```sh
+# 通常のテスト
 go test ./...
+
+# CI用テスト（並列実行）
+make test-ci
+
+# 高速テスト（タイムアウト短縮）
+make test-fast
+
+# カバレッジテスト
+make test-coverage
 ```
 
 ### ベンチマークの実行
@@ -234,6 +244,48 @@ go test -bench=. ./internal/verifier
 
 - `-bench=.` で全てのベンチマークが実行されます。
 - 必要に応じて `-bench=関数名` で個別に実行できます。
+
+### CI環境
+プロジェクトでは効率的なCIシステムを構築しています。詳細は以下を参照してください：
+
+- [CI環境ドキュメント](docs/CI_ENVIRONMENT.md) - 現在のCI環境の詳細
+- [CIリファクタリング](docs/CI_REFACTORING.md) - リファクタリングの詳細
+
+### AWSセルフホステッドランナー設定
+
+大きなファイルテストを実行するためのAWSセルフホステッドランナーを自動設定できます。
+
+#### 自動設定スクリプト
+
+```bash
+# GitHub SecretsとAWSリソースを自動設定
+./scripts/setup-github-secrets.sh
+```
+
+このスクリプトは以下を自動設定します：
+- IAMユーザーとポリシーの作成
+- EC2 IAMロールの作成
+- セキュリティグループの作成
+- GitHub Personal Access Tokenの作成
+- GitHub Secretsの設定
+- コスト監視設定（オプション）
+
+#### コスト監視設定
+
+後からコスト監視を設定する場合：
+
+```bash
+# コスト監視とアラートを設定
+./scripts/setup-cost-monitoring.sh
+```
+
+設定可能な監視項目：
+- CloudWatch CPU使用率アラーム
+- 月間予算アラート
+- CloudWatchダッシュボード
+- SNS通知設定
+
+詳細は [AWSランナー設定ガイド](docs/AWS_RUNNER_SETUP.md) を参照してください。
 
 ### コントリビュート
 - Issue/Pull Request歓迎

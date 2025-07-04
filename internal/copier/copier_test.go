@@ -14,6 +14,29 @@ import (
 	"github.com/sakuhanight/gopier/internal/logger"
 )
 
+// メモリ最適化のための初期化
+func init() {
+	// テスト環境でのメモリ使用量を制限
+	if os.Getenv("CI") == "true" {
+		if os.Getenv("AWS_RUNNER") == "true" {
+			// AWSランナーでは大きなメモリを許可
+			os.Setenv("GOGC", "100")
+			os.Setenv("GOMEMLIMIT", "4GiB")
+			os.Setenv("GOMAXPROCS", "8")
+		} else if os.Getenv("BENCHMARK_MODE") == "true" {
+			// ベンチマークモードではより多くのメモリを許可
+			os.Setenv("GOGC", "100")
+			os.Setenv("GOMEMLIMIT", "1GiB")
+			os.Setenv("GOMAXPROCS", "4")
+		} else {
+			// 通常のテストではメモリ使用量を制限
+			os.Setenv("GOGC", "50")
+			os.Setenv("GOMEMLIMIT", "256MiB")
+			os.Setenv("GOMAXPROCS", "2")
+		}
+	}
+}
+
 func TestDefaultOptions(t *testing.T) {
 	opts := DefaultOptions()
 	if opts.BufferSize != 32*1024*1024 {
@@ -708,9 +731,17 @@ func BenchmarkCopyFile_Large(b *testing.B) {
 	os.MkdirAll(sourceDir, 0755)
 	os.MkdirAll(destDir, 0755)
 
-	// 大きなファイルを作成（10MB）
+	// 環境に応じてファイルサイズを調整
+	fileSize := 10 * 1024 * 1024 // 10MB
+	if os.Getenv("AWS_RUNNER") == "true" {
+		fileSize = 100 * 1024 * 1024 // AWSランナーでは100MB
+	} else if os.Getenv("CI") == "true" {
+		fileSize = 1 * 1024 * 1024 // CI環境では1MB
+	}
+
+	// 大きなファイルを作成
 	sourceFile := filepath.Join(sourceDir, "large.txt")
-	content := make([]byte, 10*1024*1024)
+	content := make([]byte, fileSize)
 	for i := range content {
 		content[i] = byte(i % 256)
 	}
@@ -781,10 +812,21 @@ func BenchmarkCopyDirectory_Large(b *testing.B) {
 	destDir := filepath.Join(tempDir, "dest")
 	os.MkdirAll(sourceDir, 0755)
 
+	// 環境に応じてファイル数とサイズを調整
+	fileCount := 10
+	fileSize := 1024 * 1024 // 1MB
+	if os.Getenv("AWS_RUNNER") == "true" {
+		fileCount = 50              // AWSランナーでは50ファイル
+		fileSize = 10 * 1024 * 1024 // AWSランナーでは10MB
+	} else if os.Getenv("CI") == "true" {
+		fileCount = 5         // CI環境では5ファイル
+		fileSize = 512 * 1024 // CI環境では512KB
+	}
+
 	// 大きなファイルを複数作成
-	for i := 0; i < 10; i++ {
+	for i := 0; i < fileCount; i++ {
 		file := filepath.Join(sourceDir, fmt.Sprintf("large_%d.txt", i))
-		content := make([]byte, 1024*1024) // 1MB
+		content := make([]byte, fileSize)
 		for j := range content {
 			content[j] = byte((i + j) % 256)
 		}
@@ -859,10 +901,18 @@ func BenchmarkVerifyFile_Large(b *testing.B) {
 	os.MkdirAll(sourceDir, 0755)
 	os.MkdirAll(destDir, 0755)
 
+	// 環境に応じてファイルサイズを調整
+	fileSize := 5 * 1024 * 1024 // 5MB
+	if os.Getenv("AWS_RUNNER") == "true" {
+		fileSize = 50 * 1024 * 1024 // AWSランナーでは50MB
+	} else if os.Getenv("CI") == "true" {
+		fileSize = 1 * 1024 * 1024 // CI環境では1MB
+	}
+
 	// 大きなファイルを作成
 	sourceFile := filepath.Join(sourceDir, "large.txt")
 	destFile := filepath.Join(destDir, "large.txt")
-	content := make([]byte, 5*1024*1024) // 5MB
+	content := make([]byte, fileSize)
 	for i := range content {
 		content[i] = byte(i % 256)
 	}
@@ -898,8 +948,16 @@ func BenchmarkCopyFiles_Parallel(b *testing.B) {
 	destDir := filepath.Join(tempDir, "dest")
 	os.MkdirAll(sourceDir, 0755)
 
+	// 環境に応じてファイル数を調整
+	fileCount := 50
+	if os.Getenv("AWS_RUNNER") == "true" {
+		fileCount = 200 // AWSランナーでは200ファイル
+	} else if os.Getenv("CI") == "true" {
+		fileCount = 20 // CI環境では20ファイル
+	}
+
 	// 複数のファイルを作成
-	for i := 0; i < 50; i++ {
+	for i := 0; i < fileCount; i++ {
 		file := filepath.Join(sourceDir, fmt.Sprintf("file_%d.txt", i))
 		content := make([]byte, 1024) // 1KB
 		for j := range content {
@@ -944,8 +1002,16 @@ func BenchmarkCopyFiles_WithFilter(b *testing.B) {
 	destDir := filepath.Join(tempDir, "dest")
 	os.MkdirAll(sourceDir, 0755)
 
+	// 環境に応じてファイル数を調整
+	fileCount := 100
+	if os.Getenv("AWS_RUNNER") == "true" {
+		fileCount = 500 // AWSランナーでは500ファイル
+	} else if os.Getenv("CI") == "true" {
+		fileCount = 40 // CI環境では40ファイル
+	}
+
 	// 異なる拡張子のファイルを作成
-	for i := 0; i < 100; i++ {
+	for i := 0; i < fileCount; i++ {
 		extensions := []string{".txt", ".log", ".tmp", ".bak"}
 		ext := extensions[i%len(extensions)]
 		file := filepath.Join(sourceDir, fmt.Sprintf("file_%d%s", i, ext))
