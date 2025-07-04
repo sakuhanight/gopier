@@ -1,0 +1,123 @@
+name: Update Coverage Badge
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+  schedule:
+    # 毎日午前3時に実行（UTC）
+    - cron: '0 3 * * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-badge:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-1.21-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-1.21-
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run tests with coverage
+        run: |
+          echo "Running tests with coverage..."
+          go test -coverprofile=coverage.out ./...
+          
+          if [ -f coverage.out ]; then
+            echo "Coverage report generated"
+            go tool cover -func=coverage.out
+          else
+            echo "No coverage report generated"
+            exit 1
+          fi
+
+      - name: Extract coverage percentage
+        id: coverage
+        run: |
+          # より堅牢なカバレッジ抽出
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          
+          # 数値の妥当性チェック
+          if ! [[ "$COVERAGE" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+            echo "Error: Invalid coverage value: $COVERAGE"
+            exit 1
+          fi
+          
+          # 小数点以下1桁に丸める
+          COVERAGE=$(printf "%.1f" $COVERAGE)
+          
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+
+      - name: Update README badge
+        run: |
+          # カバレッジの色を決定
+          COVERAGE=${{ steps.coverage.outputs.coverage }}
+          if (( $(echo "$COVERAGE >= 80" | bc -l) )); then
+            COLOR="brightgreen"
+          elif (( $(echo "$COVERAGE >= 60" | bc -l) )); then
+            COLOR="green"
+          elif (( $(echo "$COVERAGE >= 40" | bc -l) )); then
+            COLOR="yellow"
+          else
+            COLOR="red"
+          fi
+          
+          # READMEのバッジを更新（より堅牢な正規表現）
+          sed -i "s/\[!\[Coverage\](https:\/\/img\.shields\.io\/badge\/coverage-[0-9.]*%25-[a-z]*\.svg)\]/\[!\[Coverage\](https:\/\/img\.shields\.io\/badge\/coverage-${COVERAGE}%25-${COLOR}.svg)\]/" README.md
+          
+          # バックアップとして、より具体的なパターンでも試行
+          if ! grep -q "coverage-${COVERAGE}%25" README.md; then
+            sed -i "s/coverage-[0-9.]*%25/coverage-${COVERAGE}%25/" README.md
+            sed -i "s/-[a-z]*\.svg/-${COLOR}.svg/" README.md
+          fi
+          
+          echo "Updated coverage badge to ${COVERAGE}% with color ${COLOR}"
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet README.md; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes to README.md"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "README.md has been updated"
+            git diff README.md
+          fi
+
+      - name: Commit and push changes
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git commit -m "Update coverage badge to ${{ steps.coverage.outputs.coverage }}% [skip ci]"
+          git push 
