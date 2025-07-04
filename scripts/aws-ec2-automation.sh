@@ -868,7 +868,7 @@ create_user_data_script() {
         exit 1
     fi
     
-    # ランナートークンを取得
+    # ランナートークンを取得（事前に取得）
     local runner_token
     runner_token=$(gh api repos/$repo/actions/runners/registration-token --jq .token 2>/dev/null || echo "")
     
@@ -893,17 +893,24 @@ yum update -y
 echo "Installing required packages..."
 yum install -y git curl wget unzip jq
 
-# Goのインストール（複数バージョン）
+# Goのインストール（最新版のみ）
 echo "Installing Go..."
-wget -q https://go.dev/dl/go1.21.linux-amd64.tar.gz
+cd /tmp
 wget -q https://go.dev/dl/go1.22.linux-amd64.tar.gz
-tar -C /usr/local -xzf go1.21.linux-amd64.tar.gz
-tar -C /usr/local -xzf go1.22.linux-amd64.tar.gz
+if [ -f go1.22.linux-amd64.tar.gz ]; then
+    tar -C /usr/local -xzf go1.22.linux-amd64.tar.gz
+    rm -f go1.22.linux-amd64.tar.gz
+    echo "Go installed successfully"
+else
+    echo "Failed to download Go"
+    exit 1
+fi
 
 # 環境変数の設定
 echo 'export PATH=\$PATH:/usr/local/go/bin' >> /home/ec2-user/.bashrc
 echo 'export GOGC=100' >> /home/ec2-user/.bashrc
 echo 'export GOMAXPROCS=8' >> /home/ec2-user/.bashrc
+source /home/ec2-user/.bashrc
 
 # Dockerのインストール
 echo "Installing Docker..."
@@ -912,9 +919,20 @@ systemctl start docker
 systemctl enable docker
 usermod -a -G docker ec2-user
 
+# Dockerの起動確認
+if systemctl is-active --quiet docker; then
+    echo "Docker started successfully"
+else
+    echo "Failed to start Docker"
+    systemctl status docker
+    exit 1
+fi
+
 # Windows用のツールチェーン（クロスコンパイル用）
 echo "Installing Windows toolchain..."
-yum install -y mingw64-gcc
+yum install -y mingw64-gcc || {
+    echo "Failed to install Windows toolchain, continuing..."
+}
 
 # GitHub Actionsランナーのダウンロード
 echo "Downloading GitHub Actions runner..."
@@ -925,30 +943,83 @@ cd /opt/actions-runner
 RUNNER_VERSION=\$(curl -s https://api.github.com/repos/actions/runner/releases/latest | jq -r .tag_name)
 echo "Using runner version: \$RUNNER_VERSION"
 
-curl -o actions-runner-linux-x64.tar.gz -L https://github.com/actions/runner/releases/download/\$RUNNER_VERSION/actions-runner-linux-x64-\${RUNNER_VERSION#v}.tar.gz
-tar xzf ./actions-runner-linux-x64.tar.gz
+if [ -n "\$RUNNER_VERSION" ] && [ "\$RUNNER_VERSION" != "null" ]; then
+    curl -o actions-runner-linux-x64.tar.gz -L https://github.com/actions/runner/releases/download/\$RUNNER_VERSION/actions-runner-linux-x64-\${RUNNER_VERSION#v}.tar.gz
+    if [ -f actions-runner-linux-x64.tar.gz ]; then
+        tar xzf ./actions-runner-linux-x64.tar.gz
+        rm -f actions-runner-linux-x64.tar.gz
+        echo "Runner downloaded successfully"
+    else
+        echo "Failed to download runner"
+        exit 1
+    fi
+else
+    echo "Failed to get runner version"
+    exit 1
+fi
 
 # ランナーの設定
 echo "Configuring runner..."
-./config.sh --url https://github.com/$repo --token $runner_token --labels $label --unattended --replace
+if ./config.sh --url https://github.com/$repo --token $runner_token --labels $label --unattended --replace; then
+    echo "Runner configured successfully"
+else
+    echo "Failed to configure runner"
+    echo "Checking config logs..."
+    cat _diag/*.log || true
+    exit 1
+fi
 
-# ランナーの起動
-echo "Starting runner..."
-nohup ./run.sh > /var/log/actions-runner.log 2>&1 &
+# ランナーをサービスとしてインストール
+echo "Installing runner as a service..."
+if ./svc.sh install ec2-user; then
+    echo "Runner service installed successfully"
+else
+    echo "Failed to install runner service"
+    exit 1
+fi
+
+# ランナーサービスの起動
+echo "Starting runner service..."
+if ./svc.sh start; then
+    echo "Runner service started successfully"
+else
+    echo "Failed to start runner service"
+    echo "Checking service status..."
+    systemctl status actions.runner.* || true
+    exit 1
+fi
 
 # 起動確認
 echo "Waiting for runner to start..."
 sleep 30
 
 # ランナーの状態確認
-if pgrep -f "run.sh" > /dev/null; then
-    echo "Runner started successfully"
+if systemctl is-active --quiet actions.runner.*; then
+    echo "Runner service is running"
 else
-    echo "Failed to start runner"
+    echo "Runner service is not running"
+    echo "Checking service status..."
+    systemctl status actions.runner.* || true
+    echo "Checking runner logs..."
+    tail -20 /var/log/actions-runner.log || true
+    exit 1
+fi
+
+# ランナーの登録確認
+echo "Checking runner registration..."
+sleep 10
+if [ -f .runner ]; then
+    echo "Runner configuration file exists"
+    cat .runner
+else
+    echo "Runner configuration file not found"
+    echo "Checking runner directory contents..."
+    ls -la /opt/actions-runner/ || true
     exit 1
 fi
 
 echo "User data script completed at \$(date)"
+echo "Runner setup completed successfully"
 EOF
 }
 

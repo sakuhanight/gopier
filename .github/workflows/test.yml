@@ -30,9 +30,8 @@ on:
 
 jobs:
   test:
-    runs-on: ${{ inputs.platform }}
+    runs-on: self-hosted
     timeout-minutes: ${{ inputs.timeout-minutes }}
-    # Windows環境でのメモリ最適化
     env:
       GOGC: 50
       GOMEMLIMIT: 512MiB

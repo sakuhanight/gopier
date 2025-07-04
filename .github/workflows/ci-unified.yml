@@ -24,7 +24,7 @@ env:
 jobs:
   # 依存関係の事前ダウンロードとキャッシュ
   setup:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       cache-key: ${{ steps.cache-key.outputs.value }}
     steps:
@@ -59,7 +59,7 @@ jobs:
 
   # Linux テスト（Go 1.21）
   test-linux-go121:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: setup
     strategy:
       matrix:
@@ -126,7 +126,7 @@ jobs:
 
   # Linux テスト（Go 1.22）
   test-linux-go122:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: setup
     strategy:
       matrix:
@@ -295,7 +295,7 @@ jobs:
 
   # セキュリティスキャン
   security:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: setup
     steps:
       - name: Checkout code
@@ -320,7 +320,7 @@ jobs:
 
   # ビルドとアーティファクト作成
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [test-linux-go121, test-linux-go122, test-windows, benchmark, security]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     steps:
