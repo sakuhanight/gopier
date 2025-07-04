@@ -90,11 +90,11 @@ jobs:
         if: steps.check-aws.outputs.status == 'aws-available'
         run: |
           # 環境変数を設定
-          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+          echo "AWS_REGION=${{ secrets.AWS_REGION || 'ap-northeast-1' }}" >> $GITHUB_ENV
           echo "EC2_INSTANCE_TYPE=${{ github.event.inputs.instance_type || secrets.EC2_INSTANCE_TYPE || 'c5.2xlarge' }}" >> $GITHUB_ENV
           echo "EC2_SUBNET_ID=${{ secrets.EC2_SUBNET_ID }}" >> $GITHUB_ENV
           echo "EC2_SECURITY_GROUP_ID=${{ secrets.EC2_SECURITY_GROUP_ID }}" >> $GITHUB_ENV
-          echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME }}" >> $GITHUB_ENV
+          echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME || 'GitHubRunnerRole' }}" >> $GITHUB_ENV
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
           echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
           

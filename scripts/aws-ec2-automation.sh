@@ -51,7 +51,7 @@ CONFIG_FILE="$PROJECT_ROOT/.aws-ec2-config.env"
 PROJECT_NAME="gopier"
 
 # デフォルト設定
-DEFAULT_REGION="us-east-1"
+DEFAULT_REGION="ap-northeast-1"
 DEFAULT_INSTANCE_TYPE="c5.2xlarge"
 DEFAULT_IAM_ROLE_NAME="gopier-ec2-role"
 DEFAULT_SECURITY_GROUP_NAME="gopier-runner-sg"
@@ -76,7 +76,7 @@ AWS/EC2 全自動統合管理スクリプト
 オプション:
     --label       - ランナーラベル (デフォルト: gopier-runner-\$RANDOM)
     --type        - EC2インスタンスタイプ (デフォルト: c5.2xlarge)
-    --region      - AWSリージョン (デフォルト: us-east-1)
+    --region      - AWSリージョン (デフォルト: ap-northeast-1)
     --timeout     - タイムアウト時間（分）(デフォルト: 60)
     --help        - このヘルプを表示
 
@@ -202,6 +202,12 @@ setup_environment() {
             log_info "環境変数 GITHUB_REPOSITORY を手動で設定してください"
             exit 1
         fi
+    fi
+    
+    # IAMロール名のデフォルト値設定
+    if [[ -z "${EC2_IAM_ROLE_NAME:-}" ]]; then
+        export EC2_IAM_ROLE_NAME="$DEFAULT_IAM_ROLE_NAME"
+        log_info "IAMロール名のデフォルト値を設定しました: $EC2_IAM_ROLE_NAME"
     fi
     
     log_success "環境変数設定完了"
@@ -548,6 +554,15 @@ auto_setup() {
     setup_github_secrets
     save_config
     
+    # IAMロール名の自動設定
+    if [[ -z "$EC2_IAM_ROLE_NAME" ]]; then
+        export EC2_IAM_ROLE_NAME="GitHubRunnerRole-$(date +%s)"
+        log_info "IAMロール名を自動設定しました: $EC2_IAM_ROLE_NAME"
+    fi
+    
+    # 設定ファイルに保存
+    save_config
+    
     log_success "完全自動設定が完了しました！"
     echo
     log_info "次のステップ:"
@@ -568,6 +583,12 @@ start_runner() {
     log_step "EC2ランナーを起動中..."
     
     load_config
+    
+    # IAMロール名のデフォルト値チェック
+    if [[ -z "${EC2_IAM_ROLE_NAME:-}" ]]; then
+        export EC2_IAM_ROLE_NAME="$DEFAULT_IAM_ROLE_NAME"
+        log_info "IAMロール名のデフォルト値を設定しました: $EC2_IAM_ROLE_NAME"
+    fi
     
     # AMI IDの検証
     if [[ -n "$EC2_IMAGE_ID" ]]; then
