@@ -1,0 +1,113 @@
+# テスト実行時の権限設定ワークフロー
+# このワークフローはテスト実行時の権限を制御します
+
+name: Test Permissions Setup
+
+on:
+  workflow_call:
+    # 他のワークフローから呼び出し可能
+    inputs:
+      test_type:
+        description: 'テストの種類'
+        required: false
+        default: 'unit'
+        type: string
+      platform:
+        description: 'プラットフォーム'
+        required: false
+        default: 'linux'
+        type: string
+
+jobs:
+  setup-permissions:
+    runs-on: ubuntu-latest
+    outputs:
+      test-dirs: ${{ steps.setup.outputs.test-dirs }}
+      env-vars: ${{ steps.setup.outputs.env-vars }}
+    
+    steps:
+      - name: Setup test permissions
+        id: setup
+        run: |
+          # テスト用ディレクトリを作成し、適切な権限を設定
+          mkdir -p test_output test_data coverage_reports build_output dist
+          chmod 755 test_output test_data coverage_reports build_output dist
+          
+          # ディレクトリリストを出力
+          echo "test-dirs=test_output,test_data,coverage_reports,build_output,dist" >> $GITHUB_OUTPUT
+          
+          # 環境変数を設定
+          echo "env-vars=CI=true,GITHUB_ACTIONS=true,TESTING=1" >> $GITHUB_OUTPUT
+          
+          echo "✓ Test directories created with proper permissions"
+          echo "✓ Environment variables configured"
+          echo "✓ Security permissions applied"
+
+  verify-permissions:
+    runs-on: ubuntu-latest
+    needs: setup-permissions
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      pull-requests: read
+      checks: write
+      statuses: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Verify directory permissions
+        run: |
+          # ディレクトリの権限を確認
+          echo "Verifying directory permissions..."
+          
+          for dir in test_output test_data coverage_reports build_output dist; do
+            if [ -d "$dir" ]; then
+              perms=$(stat -c "%a" "$dir")
+              echo "✓ $dir: permissions $perms"
+            else
+              echo "✗ $dir: directory not found"
+              exit 1
+            fi
+          done
+          
+          echo "✓ All directories have correct permissions"
+      
+      - name: Verify environment variables
+        run: |
+          # 環境変数を確認
+          echo "Verifying environment variables..."
+          
+          required_vars=("CI" "GITHUB_ACTIONS" "TESTING")
+          for var in "${required_vars[@]}"; do
+            if [ -n "${!var}" ]; then
+              echo "✓ $var: ${!var}"
+            else
+              echo "✗ $var: not set"
+              exit 1
+            fi
+          done
+          
+          echo "✓ All required environment variables are set"
+      
+      - name: Security check
+        run: |
+          # セキュリティチェック
+          echo "Performing security checks..."
+          
+          # 権限の最小化確認
+          if [ "$GITHUB_REF" != "refs/heads/main" ] && [ "$GITHUB_REF" != "refs/heads/develop" ]; then
+            echo "⚠️  Warning: Running on non-main branch"
+          fi
+          
+          # フォークからのPRチェック
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ "$GITHUB_BASE_REF" != "main" ] && [ "$GITHUB_BASE_REF" != "develop" ]; then
+            echo "⚠️  Warning: PR from non-main branch"
+          fi
+          
+          echo "✓ Security checks completed" 

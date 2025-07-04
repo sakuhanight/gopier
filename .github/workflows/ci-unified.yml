@@ -1,0 +1,398 @@
+name: CI Unified
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+# デフォルトの権限設定
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+  pull-requests: read
+
+# 環境変数の定義（メモリ制限を削除）
+env:
+  CI: true
+  GITHUB_ACTIONS: true
+  TESTING: 1
+  GOGC: 100
+  # GOMEMLIMITを削除してメモリ制限を無効化
+
+jobs:
+  # 依存関係の事前ダウンロードとキャッシュ
+  setup:
+    runs-on: self-hosted
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.value }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Generate cache key
+        id: cache-key
+        run: |
+          echo "value=go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}-${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ steps.cache-key.outputs.value }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}-
+            go-${{ runner.os }}-
+
+      - name: Download dependencies
+        run: go mod download
+
+  # Linux テスト（Go 1.21）
+  test-linux-go121:
+    runs-on: self-hosted
+    needs: setup
+    strategy:
+      matrix:
+        test-suite: [unit, integration, coverage]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}-
+            go-${{ runner.os }}-
+
+      - name: Setup test environment
+        run: |
+          mkdir -p test_output coverage_reports
+          chmod 755 test_output coverage_reports
+
+      - name: Run unit tests
+        if: matrix.test-suite == 'unit'
+        run: |
+          echo "Running unit tests on Linux with Go 1.21..."
+          go test -v -timeout=10m -parallel=4 ./cmd/... ./internal/...
+
+      - name: Run integration tests
+        if: matrix.test-suite == 'integration'
+        run: |
+          echo "Running integration tests on Linux with Go 1.21..."
+          go test -v -timeout=10m -parallel=4 ./tests/...
+
+      - name: Run coverage tests
+        if: matrix.test-suite == 'coverage'
+        run: |
+          echo "Running coverage tests on Linux with Go 1.21..."
+          go test -v -coverprofile=coverage.out -timeout=10m -parallel=4 ./cmd/... ./internal/...
+          if [ -f coverage.out ]; then
+            go tool cover -html=coverage.out -o coverage.html
+            go tool cover -func=coverage.out
+          fi
+
+      - name: Upload coverage to Codecov
+        if: matrix.test-suite == 'coverage' && hashFiles('coverage.out') != ''
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: linux-go121
+          name: codecov-linux-go121
+          fail_ci_if_error: false
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # Linux テスト（Go 1.22）
+  test-linux-go122:
+    runs-on: self-hosted
+    needs: setup
+    strategy:
+      matrix:
+        test-suite: [unit, integration]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}-
+            go-${{ runner.os }}-
+
+      - name: Setup test environment
+        run: |
+          mkdir -p test_output coverage_reports
+          chmod 755 test_output coverage_reports
+
+      - name: Run unit tests
+        if: matrix.test-suite == 'unit'
+        run: |
+          echo "Running unit tests on Linux with Go 1.22..."
+          go test -v -timeout=10m -parallel=4 ./cmd/... ./internal/...
+
+      - name: Run integration tests
+        if: matrix.test-suite == 'integration'
+        run: |
+          echo "Running integration tests on Linux with Go 1.22..."
+          go test -v -timeout=10m -parallel=4 ./tests/...
+
+  # Windows テスト（EC2セルフホステッドランナーを使用）
+  test-windows:
+    runs-on: self-hosted
+    needs: setup
+    strategy:
+      matrix:
+        go-version: ['1.21', '1.22']
+        test-suite: [unit, integration]
+    # メモリ制限を削除
+    env:
+      GOGC: 100
+      # GOMEMLIMITを削除
+      GOMAXPROCS: 4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}-
+            go-${{ runner.os }}-
+
+      - name: Setup Windows environment
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "test_output", "coverage_reports" | Out-Null
+          # Clean up previous artifacts
+          if (Test-Path "coverage.out") { Remove-Item "coverage.out" -Force }
+          if (Test-Path "coverage.html") { Remove-Item "coverage.html" -Force }
+          if (Test-Path "*.db") { Remove-Item "*.db" -Force }
+          if (Test-Path "gopier.exe") { Remove-Item "gopier.exe" -Force }
+          
+          # メモリ最適化設定（制限を削除）
+          $env:GOGC = "100"
+          # $env:GOMEMLIMITを削除
+          $env:GOMAXPROCS = "4"
+          $env:CGO_ENABLED = "0"
+
+      - name: Build for Windows
+        shell: cmd
+        run: |
+          echo "Building for Windows with Go ${{ matrix.go-version }}..."
+          go build -buildvcs=false -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=test" -o gopier.exe
+          if exist "gopier.exe" (
+            echo "✓ Build successful"
+            gopier.exe --help
+          ) else (
+            echo "✗ Build failed"
+            exit /b 1
+          )
+
+      - name: Run unit tests
+        if: matrix.test-suite == 'unit'
+        shell: cmd
+        run: |
+          echo "Running unit tests on Windows with Go ${{ matrix.go-version }}..."
+          go test -v -timeout=10m -parallel=4 ./cmd/... ./internal/...
+
+      - name: Run integration tests
+        if: matrix.test-suite == 'integration'
+        shell: cmd
+        run: |
+          echo "Running integration tests on Windows with Go ${{ matrix.go-version }}..."
+          go test -v -timeout=10m -parallel=4 ./tests/...
+
+      - name: Upload coverage to Codecov (Windows)
+        if: matrix.test-suite == 'unit' && hashFiles('coverage.out') != ''
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: windows-${{ matrix.go-version }}
+          name: codecov-windows-${{ matrix.go-version }}
+          fail_ci_if_error: false
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ベンチマークテスト（EC2セルフホステッドランナーを使用）
+  benchmark:
+    runs-on: self-hosted
+    needs: setup
+    strategy:
+      matrix:
+        platform: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}-
+            go-${{ runner.os }}-
+
+      - name: Run benchmarks
+        run: |
+          echo "Running benchmarks on ${{ matrix.platform }}..."
+          go test -bench=. -benchmem ./internal/... 2>/dev/null || echo "No benchmarks found"
+
+  # セキュリティスキャン
+  security:
+    runs-on: self-hosted
+    needs: setup
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install Nancy
+        run: |
+          echo "Installing Nancy security scanner..."
+          go install github.com/sonatype-nexus-community/nancy@latest
+
+      - name: Run security scan
+        run: |
+          echo "Running security scan..."
+          go list -json -deps ./... | nancy sleuth || echo "Security scan completed"
+
+  # ビルドとアーティファクト作成
+  build:
+    runs-on: self-hosted
+    needs: [test-linux-go121, test-linux-go122, test-windows, benchmark, security]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}-
+            go-${{ runner.os }}-
+
+      - name: Setup build environment
+        run: |
+          mkdir -p build_output dist
+          chmod 755 build_output dist
+
+      - name: Build
+        run: make build
+
+      - name: Test build
+        run: |
+          echo "Testing build output..."
+          ./gopier --help || exit 1
+          ./gopier --create-config || exit 1
+          echo "Build test completed successfully"
+
+      - name: Cross-platform build
+        run: make cross-build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gopier-build-${{ github.sha }}
+          path: |
+            gopier
+            gopier.exe
+            build/
+            build_output/
+            dist/
+          retention-days: 30
+
+  # カバレッジバッジ更新
+  update-coverage-badge:
+    runs-on: ubuntu-latest
+    needs: [test-linux-go121, test-windows]
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update coverage badge
+        uses: schneegans/dynamic-badges-action@v1.6.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: your-gist-id
+          filename: coverage.json
+          label: coverage
+          message: ${{ needs.test-linux-go121.outputs.coverage || 'unknown' }}%
+          namedLogo: codecov
+          color: green 

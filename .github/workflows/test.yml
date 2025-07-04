@@ -1,0 +1,194 @@
+name: Run Tests
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: 'Go version to use'
+        required: true
+        type: string
+      platform:
+        description: 'Platform to run tests on'
+        required: true
+        type: string
+        default: 'ubuntu-latest'
+      coverage-flag:
+        description: 'Coverage flag for Codecov'
+        required: false
+        type: string
+        default: 'unittests'
+      timeout-minutes:
+        description: 'Timeout for the job'
+        required: false
+        type: number
+        default: 30
+      test-type:
+        description: 'Type of tests to run (unit, integration, or all)'
+        required: false
+        type: string
+        default: 'all'
+
+jobs:
+  test:
+    runs-on: self-hosted
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      GOGC: 50
+      GOMEMLIMIT: 512MiB
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ inputs.go-version }}-
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Setup test environment (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p test_output test_data coverage_reports
+          chmod 755 test_output test_data coverage_reports
+
+      - name: Setup test environment (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force -Path "test_output", "test_data", "coverage_reports" | Out-Null
+          # Clean up previous artifacts
+          if (Test-Path "coverage.out") { Remove-Item "coverage.out" -Force }
+          if (Test-Path "coverage.html") { Remove-Item "coverage.html" -Force }
+          if (Test-Path "*.db") { Remove-Item "*.db" -Force }
+          if (Test-Path "gopier.exe") { Remove-Item "gopier.exe" -Force }
+          # Kill hanging processes
+          Get-Process | Where-Object {$_.ProcessName -like "*go*" -or $_.ProcessName -like "*gopier*"} | Stop-Process -Force -ErrorAction SilentlyContinue
+          
+          # メモリ使用量を確認
+          try {
+            $memoryInfo = Get-ComputerInfo | Select-Object TotalPhysicalMemory, AvailablePhysicalMemory
+            Write-Host "Total memory: $([math]::Round($memoryInfo.TotalPhysicalMemory / 1MB, 0)) MB"
+            Write-Host "Available memory: $([math]::Round($memoryInfo.AvailablePhysicalMemory / 1MB, 0)) MB"
+          } catch {
+            Write-Host "Memory info: Unable to get system information"
+          }
+        shell: pwsh
+
+      - name: Build (Windows only)
+        if: runner.os == 'Windows'
+        run: |
+          echo "Building with memory optimization..."
+          
+          REM メモリ使用量を最適化
+          set GOGC=10
+          set GOMEMLIMIT=128MiB
+          set GOMAXPROCS=1
+          set CGO_ENABLED=0
+          
+          REM ビルドキャッシュをクリア
+          go clean -cache
+          
+          REM 依存関係を事前にダウンロード（軽量版）
+          echo "Downloading dependencies..."
+          go mod download -x
+          
+          REM ビルド実行（軽量版）
+          echo "Running lightweight build..."
+          go build -buildvcs=false -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=test -X github.com/sakuhanight/gopier/cmd.BuildTime=%DATE%_%TIME%" -o gopier.exe
+          if %ERRORLEVEL% neq 0 (
+            echo "Direct build failed, trying minimal build..."
+            go build -buildvcs=false -o gopier.exe
+            if %ERRORLEVEL% neq 0 (
+              echo "Minimal build failed, trying with build.ps1..."
+              build.ps1 build
+              if %ERRORLEVEL% neq 0 (
+                echo "Build failed with exit code: %ERRORLEVEL%"
+                exit /b %ERRORLEVEL%
+              )
+            )
+          )
+          
+          REM Verify build
+          if exist "gopier.exe" (
+            echo "✓ Build successful: gopier.exe exists"
+            gopier.exe --help
+          ) else (
+            echo "✗ Build failed: gopier.exe not found"
+            exit /b 1
+          )
+        shell: cmd
+        timeout-minutes: 15
+
+      - name: Run unit tests
+        if: inputs.test-type == 'unit' || inputs.test-type == 'all'
+        run: |
+          echo "Running unit tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
+          
+          # メモリ最適化設定
+          export GOGC=50
+          export GOMEMLIMIT=256MiB
+          export GOMAXPROCS=2
+          
+          # Unit tests (軽量版)
+          echo "Running unit tests..."
+          go test -v -timeout=10m -parallel=2 ./cmd/... ./internal/... || exit 1
+
+      - name: Run integration tests
+        if: inputs.test-type == 'integration' || inputs.test-type == 'all'
+        run: |
+          echo "Running integration tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
+          
+          # メモリ最適化設定
+          export GOGC=50
+          export GOMEMLIMIT=256MiB
+          export GOMAXPROCS=2
+          
+          # Integration tests
+          echo "Running integration tests..."
+          go test -v -timeout=10m -parallel=2 ./tests/... || exit 1
+
+      - name: Run coverage tests
+        if: inputs.test-type == 'all'
+        run: |
+          echo "Running tests with coverage..."
+          
+          # メモリ最適化設定
+          export GOGC=50
+          export GOMEMLIMIT=256MiB
+          export GOMAXPROCS=2
+          
+          # Coverage tests
+          PKGS=$(go list ./internal/...)
+          go test -v -coverprofile=coverage.out -timeout=10m -parallel=2 $PKGS || exit 1
+          
+          if [ -f coverage.out ]; then
+            go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTML report generation skipped"
+            go tool cover -func=coverage.out || echo "Coverage function report generation skipped"
+          fi
+
+      - name: Upload coverage to Codecov
+        if: inputs.test-type == 'all' && hashFiles('coverage.out') != ''
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: ${{ inputs.coverage-flag }}-${{ inputs.go-version }}
+          name: codecov-${{ runner.os }}-${{ inputs.go-version }}
+          fail_ci_if_error: false
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }} 

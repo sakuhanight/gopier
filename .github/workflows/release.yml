@@ -148,7 +148,7 @@ jobs:
 
   sign:
     needs: build
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
@@ -188,7 +188,7 @@ jobs:
 
   release:
     needs: [build, sign]
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
