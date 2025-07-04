@@ -94,7 +94,7 @@ jobs:
           echo "EC2_INSTANCE_TYPE=${{ github.event.inputs.instance_type || secrets.EC2_INSTANCE_TYPE || 'c5.2xlarge' }}" >> $GITHUB_ENV
           echo "EC2_SUBNET_ID=${{ secrets.EC2_SUBNET_ID }}" >> $GITHUB_ENV
           echo "EC2_SECURITY_GROUP_ID=${{ secrets.EC2_SECURITY_GROUP_ID }}" >> $GITHUB_ENV
-          echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME || 'GitHubRunnerRole' }}" >> $GITHUB_ENV
+          echo "EC2_IAM_ROLE_NAME=${{ secrets.EC2_IAM_ROLE_NAME || 'gopier-ec2-role' }}" >> $GITHUB_ENV
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
           echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
           
