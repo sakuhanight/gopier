@@ -91,26 +91,31 @@ jobs:
         run: |
           echo "Building with memory optimization..."
           
-          # メモリ使用量を最適化
-          set GOGC=50
-          set GOMEMLIMIT=512MiB
+          REM メモリ使用量を最適化
+          set GOGC=20
+          set GOMEMLIMIT=256MiB
+          set GOMAXPROCS=2
           
-          # ビルドキャッシュをクリア
+          REM ビルドキャッシュをクリア
           go clean -cache
           
-          # 依存関係を事前にダウンロード
+          REM 依存関係を事前にダウンロード
           echo "Downloading dependencies..."
           go mod download
           
-          # ビルド実行
-          echo "Running build..."
-          build.ps1 build
+          REM ビルド実行（軽量版）
+          echo "Running lightweight build..."
+          go build -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=test -X github.com/sakuhanight/gopier/cmd.BuildTime=%DATE%_%TIME%" -o gopier.exe
           if %ERRORLEVEL% neq 0 (
-            echo "Build failed with exit code: %ERRORLEVEL%"
-            exit /b %ERRORLEVEL%
+            echo "Direct build failed, trying with build.ps1..."
+            build.ps1 build
+            if %ERRORLEVEL% neq 0 (
+              echo "Build failed with exit code: %ERRORLEVEL%"
+              exit /b %ERRORLEVEL%
+            )
           )
           
-          # Verify build
+          REM Verify build
           if exist "gopier.exe" (
             echo "✓ Build successful: gopier.exe exists"
             gopier.exe --help
