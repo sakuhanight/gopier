@@ -174,7 +174,13 @@ setup_environment() {
     # GitHub認証情報の確認と設定
     if [[ -z "${GITHUB_TOKEN:-}" ]]; then
         export GITHUB_TOKEN=$(gh auth token)
-        log_info "GitHub TokenをGitHub CLIから取得しました"
+        if [[ -n "$GITHUB_TOKEN" ]]; then
+            log_info "GitHub TokenをGitHub CLIから取得しました"
+        else
+            log_error "GitHub Tokenの取得に失敗しました"
+            log_info "GitHub CLIの認証を確認してください: gh auth status"
+            exit 1
+        fi
     fi
     
     # GitHubリポジトリの自動検出
@@ -495,6 +501,7 @@ EC2_IAM_ROLE_NAME=$EC2_IAM_ROLE_NAME
 
 # GitHub設定
 GITHUB_REPOSITORY=$GITHUB_REPOSITORY
+GITHUB_TOKEN=$GITHUB_TOKEN
 
 # プロジェクト設定
 PROJECT_NAME=$PROJECT_NAME
@@ -521,6 +528,7 @@ load_config() {
             "EC2_SECURITY_GROUP_ID"
             "EC2_IAM_ROLE_NAME"
             "GITHUB_REPOSITORY"
+            "GITHUB_TOKEN"
         )
         
         local missing_vars=()
@@ -588,6 +596,18 @@ start_runner() {
     if [[ -z "${EC2_IAM_ROLE_NAME:-}" ]]; then
         export EC2_IAM_ROLE_NAME="$DEFAULT_IAM_ROLE_NAME"
         log_info "IAMロール名のデフォルト値を設定しました: $EC2_IAM_ROLE_NAME"
+    fi
+    
+    # GitHubトークンのデフォルト値チェック
+    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+        export GITHUB_TOKEN=$(gh auth token)
+        if [[ -n "$GITHUB_TOKEN" ]]; then
+            log_info "GitHub TokenをGitHub CLIから取得しました"
+        else
+            log_error "GitHub Tokenが設定されていません"
+            log_info "GitHub CLIの認証を確認してください: gh auth status"
+            exit 1
+        fi
     fi
     
     # AMI IDの検証
