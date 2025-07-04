@@ -1,0 +1,119 @@
+# セキュリティ権限設定
+# このファイルはGitHub Actionsの権限を最小化するための設定です
+
+# デフォルト権限設定（最小権限の原則）
+default_permissions:
+  contents: read        # リポジトリコンテンツの読み取りのみ
+  actions: read         # Actionsの読み取りのみ
+  security-events: write # セキュリティイベントの書き込み
+  pull-requests: read   # PRの読み取りのみ
+  checks: write         # チェック結果の書き込み
+  statuses: write       # ステータス更新の書き込み
+  deployments: none     # デプロイメント権限なし
+  issues: none          # イシュー権限なし
+  packages: none        # パッケージ権限なし
+  pages: none           # Pages権限なし
+  repository-projects: none # プロジェクト権限なし
+
+# ジョブ別権限設定
+job_permissions:
+  test:
+    contents: read
+    actions: read
+    security-events: write
+    pull-requests: read
+    checks: write
+    statuses: write
+    deployments: none
+    issues: none
+    packages: none
+    pages: none
+    repository-projects: none
+  
+  build:
+    contents: read
+    actions: read
+    security-events: write
+    pull-requests: read
+    checks: write
+    statuses: write
+    deployments: none
+    issues: none
+    packages: none
+    pages: none
+    repository-projects: none
+  
+  deploy:
+    contents: read
+    actions: read
+    security-events: write
+    pull-requests: read
+    checks: write
+    statuses: write
+    deployments: write  # デプロイ時のみ
+    issues: none
+    packages: write     # パッケージ公開時のみ
+    pages: none
+    repository-projects: none
+
+# セキュリティチェック設定
+security_checks:
+  # フォークからのPR制限
+  restrict_fork_prs: true
+  
+  # 承認要求
+  require_approval: true
+  
+  # ワークフロー制限
+  restrict_workflow: true
+  
+  # 自己承認禁止
+  allow_self_approval: false
+  
+  # 機密情報の保護
+  protect_secrets: true
+  
+  # 環境変数の暗号化
+  encrypt_env_vars: true
+
+# テスト実行時の安全設定
+test_security:
+  # テスト用ディレクトリの権限
+  test_directories:
+    - path: "./test_output"
+      permissions: "755"
+    - path: "./test_data"
+      permissions: "755"
+    - path: "./coverage_reports"
+      permissions: "755"
+    - path: "./build_output"
+      permissions: "755"
+    - path: "./dist"
+      permissions: "755"
+  
+  # テスト実行時の環境変数
+  environment_variables:
+    CI: "true"
+    GITHUB_ACTIONS: "true"
+    TESTING: "1"
+    TEST_OUTPUT_DIR: "./test_output"
+    COVERAGE_DIR: "./coverage_reports"
+    BUILD_OUTPUT_DIR: "./build_output"
+    DIST_DIR: "./dist"
+  
+  # テスト実行時の制限
+  restrictions:
+    # ネットワークアクセス制限
+    network_access: "local_only"
+    
+    # ファイルシステムアクセス制限
+    filesystem_access: "test_directories_only"
+    
+    # プロセス制限
+    process_restrictions: "test_processes_only"
+    
+    # メモリ制限
+    memory_limit: "1GB"
+    
+    # CPU制限
+    cpu_limit: "2cores" 

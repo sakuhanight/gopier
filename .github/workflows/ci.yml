@@ -6,193 +6,70 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+# デフォルトの権限設定
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+  pull-requests: read
+
+# 環境変数の定義
+env:
+  CI: true
+  GITHUB_ACTIONS: true
+  TESTING: 1
+  TEST_OUTPUT_DIR: ./test_output
+  COVERAGE_DIR: ./coverage_reports
+  BUILD_OUTPUT_DIR: ./build_output
+  DIST_DIR: ./dist
+
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: [1.21, 1.22]
+  # Linux/macOS テストジョブ
+  test-linux:
+    uses: ./.github/workflows/test.yml
+    with:
+      go-version: '1.21'
+      platform: 'ubuntu-latest'
+      coverage-flag: ${{ github.ref == 'refs/heads/develop' && 'develop' || 'unittests' }}
+      timeout-minutes: 20
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  test-linux-go122:
+    uses: ./.github/workflows/test.yml
+    with:
+      go-version: '1.22'
+      platform: 'ubuntu-latest'
+      coverage-flag: ${{ github.ref == 'refs/heads/develop' && 'develop' || 'unittests' }}
+      timeout-minutes: 20
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: ${{ matrix.go-version }}
-
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-            ${{ runner.os }}-go-
-
-      - name: Install dependencies
-        run: go mod download
-
-      - name: Run tests
-        run: make test
-
-      - name: Run tests with coverage
-        run: make test-coverage
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.out
-          flags: ${{ github.ref == 'refs/heads/develop' && 'develop' || 'unittests' }}
-          name: codecov-umbrella
-          fail_ci_if_error: false
-          verbose: true
-          token: ${{ secrets.CODECOV_TOKEN }}
-
+  # Windows テストジョブ
   test-windows:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        go-version: [1.21, 1.22]
-    timeout-minutes: 30
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: ${{ matrix.go-version }}
-      
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-            ${{ runner.os }}-go-
-      
-      - name: Install dependencies
-        run: go mod download
-      
-      - name: Verify Go installation
-        run: |
-          go version
-          go env GOPATH
-          go env GOROOT
-          Write-Host "Go installation verified successfully"
-      
-      - name: Set environment variables
-        run: |
-          $env:CI = "true"
-          $env:GITHUB_ACTIONS = "true"
-          $env:TESTING = "1"
-          Write-Host "Environment variables set"
-      
-      - name: Clean up previous test artifacts
-        run: |
-          Write-Host "Cleaning up previous test artifacts..."
-          if (Test-Path "coverage.out") { Remove-Item "coverage.out" -Force }
-          if (Test-Path "coverage.html") { Remove-Item "coverage.html" -Force }
-          if (Test-Path "*.db") { Remove-Item "*.db" -Force }
-          if (Test-Path "gopier.exe") { Remove-Item "gopier.exe" -Force }
-          Write-Host "Cleanup completed"
-      
-      - name: Kill any hanging processes
-        run: |
-          Write-Host "Killing any hanging processes..."
-          Get-Process | Where-Object {$_.ProcessName -like "*go*" -or $_.ProcessName -like "*gopier*"} | Stop-Process -Force -ErrorAction SilentlyContinue
-          Write-Host "Process cleanup completed"
-      
-      - name: Build
-        run: |
-          echo "Starting build process..."
-          build.ps1 build
-          if %ERRORLEVEL% neq 0 (
-            echo "Build failed with exit code: %ERRORLEVEL%"
-            exit /b %ERRORLEVEL%
-          )
-        shell: cmd
-        timeout-minutes: 10
-      
-      - name: Verify build output
-        run: |
-          if exist "gopier.exe" (
-            echo "✓ Build successful: gopier.exe exists"
-            for %%A in ("gopier.exe") do echo "Executable size: %%~zA bytes"
-            gopier.exe --help
-          ) else (
-            echo "✗ Build failed: gopier.exe not found"
-            dir
-            exit /b 1
-          )
-        shell: cmd
-      
-      - name: Test
-        run: |
-          echo "Starting tests..."
-          set CI=true
-          set GITHUB_ACTIONS=true
-          set TESTING=1
-          build.ps1 test
-          if %ERRORLEVEL% neq 0 (
-            echo "Tests failed with exit code: %ERRORLEVEL%"
-            exit /b %ERRORLEVEL%
-          )
-          echo "Tests completed successfully"
-        shell: cmd
-        timeout-minutes: 15
-      
-      - name: Coverage
-        run: |
-          echo "Starting coverage tests..."
-          set CI=true
-          set GITHUB_ACTIONS=true
-          set TESTING=1
-          build.ps1 test-coverage
-          if %ERRORLEVEL% neq 0 (
-            echo "Coverage tests failed with exit code: %ERRORLEVEL%"
-            exit /b %ERRORLEVEL%
-          )
-          echo "Coverage tests completed successfully"
-        shell: cmd
-        timeout-minutes: 15
-      
-      - name: Verify coverage file
-        run: |
-          if (Test-Path "coverage.out") {
-            Write-Host "✓ Coverage file generated: coverage.out"
-            $size = (Get-Item "coverage.out").Length
-            Write-Host "Coverage file size: $size bytes"
-          } else {
-            Write-Host "✗ Coverage file not found"
-            Get-ChildItem -Name
-            exit 1
-          }
-      
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.out
-          flags: windows
-          name: codecov-windows
-          fail_ci_if_error: false
-          verbose: true
-          token: ${{ secrets.CODECOV_TOKEN }}
+    uses: ./.github/workflows/test.yml
+    with:
+      go-version: '1.21'
+      platform: 'windows-latest'
+      coverage-flag: 'windows'
+      timeout-minutes: 30
 
+  test-windows-go122:
+    uses: ./.github/workflows/test.yml
+    with:
+      go-version: '1.22'
+      platform: 'windows-latest'
+      coverage-flag: 'windows'
+      timeout-minutes: 30
+
+  # ビルドジョブ
   build:
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test-linux, test-linux-go122, test-windows, test-windows-go122]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -205,15 +82,32 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-1.21-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+            ${{ runner.os }}-go-1.21-
             ${{ runner.os }}-go-
+
+      - name: Setup build environment
+        run: |
+          mkdir -p build_output dist
+          chmod 755 build_output dist
 
       - name: Build
         run: make build
 
       - name: Test build
         run: |
-          ./gopier --help
-          ./gopier --create-config 
+          echo "Testing build output..."
+          ./gopier --help || exit 1
+          ./gopier --create-config || exit 1
+          echo "Build test completed successfully"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gopier-build-${{ github.sha }}
+          path: |
+            gopier
+            build_output/
+            dist/
+          retention-days: 30 
