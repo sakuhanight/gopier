@@ -307,6 +307,11 @@ jobs:
         with:
           go-version: '1.21'
 
+      - name: Install Nancy
+        run: |
+          echo "Installing Nancy security scanner..."
+          go install github.com/sonatype-nexus-community/nancy@latest
+
       - name: Run security scan
         run: |
           echo "Running security scan..."
