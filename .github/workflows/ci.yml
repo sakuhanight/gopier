@@ -110,19 +110,15 @@ jobs:
           Get-Process | Where-Object {$_.ProcessName -like "*go*" -or $_.ProcessName -like "*gopier*"} | Stop-Process -Force -ErrorAction SilentlyContinue
           Write-Host "Process cleanup completed"
       
-      - name: Set PowerShell execution policy
-        run: |
-          Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-          Write-Host "PowerShell execution policy set to RemoteSigned"
-      
       - name: Build
         run: |
           Write-Host "Starting build process..."
-          pwsh -NonInteractive -NoProfile -Command "& { .\build.ps1 build }"
+          & .\build.ps1 build
           if ($LASTEXITCODE -ne 0) {
             Write-Host "Build failed with exit code: $LASTEXITCODE"
             exit $LASTEXITCODE
           }
+        shell: pwsh
         timeout-minutes: 10
       
       - name: Verify build output
@@ -131,12 +127,13 @@ jobs:
             Write-Host "✓ Build successful: gopier.exe exists"
             $size = (Get-Item "gopier.exe").Length / 1MB
             Write-Host "Executable size: $([math]::Round($size, 2)) MB"
-            .\gopier.exe --help
+            & .\gopier.exe --help
           } else {
             Write-Host "✗ Build failed: gopier.exe not found"
             Get-ChildItem -Name
             exit 1
           }
+        shell: pwsh
       
       - name: Test
         run: |
@@ -144,12 +141,13 @@ jobs:
           $env:CI = "true"
           $env:GITHUB_ACTIONS = "true"
           $env:TESTING = "1"
-          pwsh -Command ".\build.ps1 test"
+          & .\build.ps1 test
           if ($LASTEXITCODE -ne 0) {
             Write-Host "Tests failed with exit code: $LASTEXITCODE"
             exit $LASTEXITCODE
           }
           Write-Host "Tests completed successfully"
+        shell: pwsh
         timeout-minutes: 15
       
       - name: Coverage
@@ -158,12 +156,13 @@ jobs:
           $env:CI = "true"
           $env:GITHUB_ACTIONS = "true"
           $env:TESTING = "1"
-          pwsh -Command ".\build.ps1 test-coverage"
+          & .\build.ps1 test-coverage
           if ($LASTEXITCODE -ne 0) {
             Write-Host "Coverage tests failed with exit code: $LASTEXITCODE"
             exit $LASTEXITCODE
           }
           Write-Host "Coverage tests completed successfully"
+        shell: pwsh
         timeout-minutes: 15
       
       - name: Verify coverage file
