@@ -46,7 +46,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       go-version: '1.21'
-      platform: 'self-hosted-windows'
+      platform: 'self-hosted, windows'
       coverage-flag: 'windows-unit'
       timeout-minutes: 25
       test-type: 'unit'
@@ -55,7 +55,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       go-version: '1.21'
-      platform: 'self-hosted-windows'
+      platform: 'self-hosted, windows'
       coverage-flag: 'windows-integration'
       timeout-minutes: 25
       test-type: 'integration'
@@ -64,7 +64,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       go-version: '1.22'
-      platform: 'self-hosted-windows'
+      platform: 'self-hosted, windows'
       coverage-flag: 'windows-go122-unit'
       timeout-minutes: 25
       test-type: 'unit'
@@ -73,7 +73,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       go-version: '1.22'
-      platform: 'self-hosted-windows'
+      platform: 'self-hosted, windows'
       coverage-flag: 'windows-go122-integration'
       timeout-minutes: 25
       test-type: 'integration'
@@ -90,7 +90,7 @@ jobs:
     uses: ./.github/workflows/benchmark.yml
     with:
       go-version: '1.21'
-      platform: 'self-hosted-windows'
+      platform: 'self-hosted, windows'
       timeout-minutes: 35
 
   # ビルドジョブ
