@@ -451,16 +451,21 @@ setup_github_secrets() {
     local repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
     log_info "対象リポジトリ: $repo"
     
-    # Secrets設定
+    # 空文字チェックとデフォルト値設定
+    local aws_region="${AWS_REGION:-$DEFAULT_REGION}"
+    local instance_type="${EC2_INSTANCE_TYPE:-$DEFAULT_INSTANCE_TYPE}"
+    local iam_role_name="${EC2_IAM_ROLE_NAME:-$DEFAULT_IAM_ROLE_NAME}"
+    
+    # Secrets設定（空文字を防ぐ）
     local secrets=(
         "AWS_ACCESS_KEY_ID:$AWS_ACCESS_KEY_ID"
         "AWS_SECRET_ACCESS_KEY:$AWS_SECRET_ACCESS_KEY"
-        "AWS_REGION:$AWS_REGION"
+        "AWS_REGION:$aws_region"
         "EC2_SECURITY_GROUP_ID:$EC2_SECURITY_GROUP_ID"
         "EC2_SUBNET_ID:$EC2_SUBNET_ID"
         "EC2_IMAGE_ID:$EC2_IMAGE_ID"
-        "EC2_INSTANCE_TYPE:$EC2_INSTANCE_TYPE"
-        "EC2_IAM_ROLE_NAME:$EC2_IAM_ROLE_NAME"
+        "EC2_INSTANCE_TYPE:$instance_type"
+        "EC2_IAM_ROLE_NAME:$iam_role_name"
         "GITHUB_TOKEN:$GITHUB_TOKEN"
     )
     
@@ -473,6 +478,8 @@ setup_github_secrets() {
             echo "$value" | gh secret set "$key" --repo "$repo" 2>/dev/null || {
                 log_warning "$key の設定に失敗しました（既に存在する可能性があります）"
             }
+        else
+            log_warning "$key の値が空のため、設定をスキップします"
         fi
     done
     
@@ -483,13 +490,41 @@ setup_github_secrets() {
 save_config() {
     log_step "設定を保存中..."
     
+    # 空文字チェックとデフォルト値設定
+    local aws_region="${AWS_REGION:-$DEFAULT_REGION}"
+    local instance_type="${EC2_INSTANCE_TYPE:-$DEFAULT_INSTANCE_TYPE}"
+    local iam_role_name="${EC2_IAM_ROLE_NAME:-$DEFAULT_IAM_ROLE_NAME}"
+    local project_name="${PROJECT_NAME:-gopier}"
+    
+    # 必須項目の検証
+    if [[ -z "$aws_region" ]]; then
+        log_error "AWS_REGIONが設定されていません"
+        exit 1
+    fi
+    
+    if [[ -z "$instance_type" ]]; then
+        log_error "EC2_INSTANCE_TYPEが設定されていません"
+        exit 1
+    fi
+    
+    if [[ -z "$iam_role_name" ]]; then
+        log_error "EC2_IAM_ROLE_NAMEが設定されていません"
+        exit 1
+    fi
+    
+    if [[ -z "$GITHUB_REPOSITORY" ]]; then
+        log_error "GITHUB_REPOSITORYが設定されていません"
+        exit 1
+    fi
+    
+    # 設定ファイルに保存
     cat > "$CONFIG_FILE" << EOF
 # AWS/EC2自動設定ファイル
 # 生成日時: $(date)
 
 # AWS設定
-AWS_REGION=$AWS_REGION
-EC2_INSTANCE_TYPE=$EC2_INSTANCE_TYPE
+AWS_REGION=$aws_region
+EC2_INSTANCE_TYPE=$instance_type
 
 # EC2設定
 EC2_IMAGE_ID=$EC2_IMAGE_ID
@@ -497,17 +532,22 @@ EC2_SUBNET_ID=$EC2_SUBNET_ID
 EC2_VPC_ID=$EC2_VPC_ID
 EC2_AVAILABILITY_ZONE=$EC2_AVAILABILITY_ZONE
 EC2_SECURITY_GROUP_ID=$EC2_SECURITY_GROUP_ID
-EC2_IAM_ROLE_NAME=$EC2_IAM_ROLE_NAME
+EC2_IAM_ROLE_NAME=$iam_role_name
 
 # GitHub設定
 GITHUB_REPOSITORY=$GITHUB_REPOSITORY
 GITHUB_TOKEN=$GITHUB_TOKEN
 
 # プロジェクト設定
-PROJECT_NAME=$PROJECT_NAME
+PROJECT_NAME=$project_name
 EOF
     
     log_success "設定ファイル保存完了: $CONFIG_FILE"
+    log_info "保存された設定:"
+    log_info "  AWS_REGION: $aws_region"
+    log_info "  EC2_INSTANCE_TYPE: $instance_type"
+    log_info "  EC2_IAM_ROLE_NAME: $iam_role_name"
+    log_info "  GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
 }
 
 # 設定ファイルの読み込み
@@ -560,11 +600,10 @@ auto_setup() {
     setup_security_group
     setup_iam_role
     setup_github_secrets
-    save_config
     
     # IAMロール名の自動設定
     if [[ -z "$EC2_IAM_ROLE_NAME" ]]; then
-        export EC2_IAM_ROLE_NAME="GitHubRunnerRole-$(date +%s)"
+        export EC2_IAM_ROLE_NAME="$DEFAULT_IAM_ROLE_NAME"
         log_info "IAMロール名を自動設定しました: $EC2_IAM_ROLE_NAME"
     fi
     
