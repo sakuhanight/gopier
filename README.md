@@ -198,6 +198,39 @@ verify_hash: true
 - すべてのエラーはloggerで一元管理
 - 致命的エラーとリカバリ可能エラーを区別
 - リトライ状況も詳細に記録
+
+---
+
+## CI/CD と EC2 Self-Hosted Runner
+
+このプロジェクトでは、`machulav/ec2-github-runner`を使用せずに独自実装したEC2セルフホステッドランナー管理システムを採用しています。
+
+### 特徴
+- **独自実装**: サードパーティのアクションに依存しない
+- **完全制御**: EC2インスタンスのライフサイクルを完全に管理
+- **コスト最適化**: 自動クリーンアップとコスト監視
+- **柔軟性**: カスタマイズ可能な設定とスクリプト
+
+### 管理スクリプト
+- `scripts/ec2-runner-manager.sh` - メインのランナー管理スクリプト
+- `scripts/ec2-runner-helper.sh` - ランナー監視・管理のヘルパースクリプト
+
+### 使用方法
+```bash
+# ランナーの起動
+./scripts/ec2-runner-manager.sh start --label "my-runner" --type "t3.medium"
+
+# ランナーの停止
+./scripts/ec2-runner-manager.sh stop --label "my-runner"
+
+# ランナーの監視
+./scripts/ec2-runner-helper.sh monitor --repository "owner/repo"
+
+# 健全性チェック
+./scripts/ec2-runner-helper.sh health-check --repository "owner/repo"
+```
+
+詳細な使用方法とセットアップ手順については、[EC2 Runner Management Documentation](docs/EC2_RUNNER_MANAGEMENT.md)を参照してください。
 - `--verbose`で詳細なエラー・リトライ情報を出力
 - デフォルトはファイルごとの成功・失敗・スキップのみ簡易表示
 

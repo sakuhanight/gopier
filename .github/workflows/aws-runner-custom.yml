@@ -1,0 +1,223 @@
+name: AWS Self-Hosted Runner (Custom Implementation)
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: 'Go version to use'
+        required: true
+        type: string
+      test-type:
+        description: 'Type of tests to run'
+        required: true
+        type: string
+        default: 'large-files'
+      timeout-minutes:
+        description: 'Timeout for the job'
+        required: false
+        type: number
+        default: 60
+      instance-type:
+        description: 'EC2 instance type'
+        required: false
+        type: string
+        default: 't3.medium'
+
+jobs:
+  start-runner:
+    name: Start AWS EC2 runner (Custom)
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+      public-ip: ${{ steps.start-ec2-runner.outputs.public-ip }}
+    steps:
+      - name: Check AWS credentials
+        run: |
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] || [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] || [ -z "${{ secrets.AWS_REGION }}" ]; then
+            echo "AWS credentials not configured. Skipping AWS runner tests."
+            exit 0
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment variables
+        run: |
+          echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
+          echo "GITHUB_TOKEN=${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}" >> $GITHUB_ENV
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+
+      - name: Make script executable
+        run: chmod +x scripts/ec2-runner-manager.sh
+
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        run: |
+          # ランナートークンの取得
+          RUNNER_TOKEN=$(curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runners/registration-token" | \
+            jq -r '.token')
+          
+          # 環境変数として設定
+          export RUNNER_TOKEN="$RUNNER_TOKEN"
+          export RUNNER_LABEL="ec2-runner-${{ github.run_id }}"
+          
+          # EC2ランナーを起動
+          ./scripts/ec2-runner-manager.sh start \
+            --label "$RUNNER_LABEL" \
+            --type "${{ inputs.instance-type }}" \
+            --subnet "${{ secrets.EC2_SUBNET_ID }}" \
+            --sg "${{ secrets.EC2_SECURITY_GROUP_ID }}" \
+            --role "${{ secrets.EC2_IAM_ROLE_NAME }}" \
+            --timeout "${{ inputs.timeout-minutes }}"
+
+  run-large-tests:
+    name: Run large file tests on AWS runner
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    
+    # AWSランナー用のメモリ最適化設定
+    env:
+      GOGC: 100
+      GOMEMLIMIT: 4GiB
+      GOMAXPROCS: 8
+      AWS_RUNNER: true
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ inputs.go-version }}-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Setup test environment
+        run: |
+          mkdir -p test_output test_data coverage_reports large_test_data
+          chmod 755 test_output test_data coverage_reports large_test_data
+          
+          # システム情報を確認
+          echo "=== System Information ==="
+          echo "CPU cores: $(nproc)"
+          echo "Memory: $(free -h)"
+          echo "Disk space: $(df -h)"
+          echo "Go version: $(go version)"
+          echo "Environment variables:"
+          echo "GOGC: $GOGC"
+          echo "GOMEMLIMIT: $GOMEMLIMIT"
+          echo "GOMAXPROCS: $GOMAXPROCS"
+
+      - name: Run tests based on type
+        run: |
+          echo "Running ${{ inputs.test-type }} tests on AWS runner..."
+          
+          case "${{ inputs.test-type }}" in
+            "large-files")
+              echo "Running large file tests..."
+              # 大きなファイルテストを実行
+              go test -v -timeout=30m -parallel=4 ./internal/copier/... || exit 1
+              # ベンチマークテストを実行
+              go test -v -bench=. -benchmem -timeout=30m ./internal/copier/... || exit 1
+              # カバレッジテストを実行
+              PKGS=$(go list ./internal/...)
+              go test -v -coverprofile=coverage.out -timeout=30m -parallel=4 $PKGS || exit 1
+              ;;
+            "integration")
+              echo "Running integration tests..."
+              # 統合テストを実行
+              go test -v -timeout=20m -parallel=4 ./tests/... || exit 1
+              # カバレッジテストを実行
+              PKGS=$(go list ./internal/...)
+              go test -v -coverprofile=coverage.out -timeout=20m -parallel=4 $PKGS || exit 1
+              ;;
+            "benchmark")
+              echo "Running benchmark tests..."
+              # ベンチマークテストを実行
+              go test -v -bench=. -benchmem -timeout=30m ./internal/copier/... || exit 1
+              go test -v -bench=. -benchmem -timeout=30m ./internal/hasher/... || exit 1
+              go test -v -bench=. -benchmem -timeout=30m ./internal/filter/... || exit 1
+              ;;
+            *)
+              echo "Unknown test type: ${{ inputs.test-type }}"
+              exit 1
+              ;;
+          esac
+          
+          if [ -f coverage.out ]; then
+            go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTML report generation skipped"
+            go tool cover -func=coverage.out || echo "Coverage function report generation skipped"
+          fi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-runner-results-${{ inputs.test-type }}-${{ inputs.go-version }}
+          path: |
+            test_output/
+            coverage_reports/
+            coverage.out
+            coverage.html
+          retention-days: 30
+
+  stop-runner:
+    name: Stop AWS EC2 runner
+    needs:
+      - start-runner
+      - run-large-tests
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment variables
+        run: |
+          echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
+          echo "GITHUB_TOKEN=${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}" >> $GITHUB_ENV
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+
+      - name: Make script executable
+        run: chmod +x scripts/ec2-runner-manager.sh
+
+      - name: Stop EC2 runner
+        run: |
+          ./scripts/ec2-runner-manager.sh stop --label "${{ needs.start-runner.outputs.label }}" 
