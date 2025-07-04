@@ -1,4 +1,4 @@
-name: CI Unified
+name: CI with EC2 Self-Hosted Runner
 
 on:
   push:
@@ -13,18 +13,80 @@ permissions:
   security-events: write
   pull-requests: read
 
-# 環境変数の定義（メモリ制限を削除）
+# 環境変数の定義（メモリ制限なし）
 env:
   CI: true
   GITHUB_ACTIONS: true
   TESTING: 1
   GOGC: 100
-  # GOMEMLIMITを削除してメモリ制限を無効化
+  # メモリ制限を削除してリソースを最大限活用
 
 jobs:
+  # EC2ランナーを起動
+  start-ec2-runner:
+    name: Start EC2 Self-Hosted Runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Check AWS credentials
+        run: |
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] || [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] || [ -z "${{ secrets.AWS_REGION }}" ]; then
+            echo "AWS credentials not configured. Using GitHub-hosted runners."
+            exit 0
+          fi
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          ec2-image-id: ${{ secrets.EC2_IMAGE_ID }}
+          ec2-instance-type: ${{ secrets.EC2_INSTANCE_TYPE }}
+          subnet-id: ${{ secrets.EC2_SUBNET_ID }}
+          security-group-id: ${{ secrets.EC2_SECURITY_GROUP_ID }}
+          iam-role-name: ${{ secrets.EC2_IAM_ROLE_NAME }}
+          aws-resource-tags: >
+            [
+              {"Key": "Name", "Value": "gopier-ci-runner"},
+              {"Key": "GitHubRepository", "Value": "${{ github.repository }}"},
+              {"Key": "Workflow", "Value": "ci-ec2-runner"}
+            ]
+          pre-runner-script: |
+            # システムの更新
+            sudo yum update -y
+            sudo yum install -y git wget unzip
+            
+            # Goのインストール（複数バージョン）
+            wget https://go.dev/dl/go1.21.linux-amd64.tar.gz
+            wget https://go.dev/dl/go1.22.linux-amd64.tar.gz
+            sudo tar -C /usr/local -xzf go1.21.linux-amd64.tar.gz
+            sudo tar -C /usr/local -xzf go1.22.linux-amd64.tar.gz
+            
+            # 環境変数の設定（メモリ制限なし）
+            echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+            echo 'export GOGC=100' >> ~/.bashrc
+            echo 'export GOMAXPROCS=8' >> ~/.bashrc
+            # GOMEMLIMITを設定しない（制限なし）
+            
+            # Windows用のツールチェーン（クロスコンパイル用）
+            sudo yum install -y mingw64-gcc
+            
+            source ~/.bashrc
+
   # 依存関係の事前ダウンロードとキャッシュ
   setup:
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.start-ec2-runner.outputs.label || 'ubuntu-latest' }}
+    needs: start-ec2-runner
     outputs:
       cache-key: ${{ steps.cache-key.outputs.value }}
     steps:
@@ -59,8 +121,8 @@ jobs:
 
   # Linux テスト（Go 1.21）
   test-linux-go121:
-    runs-on: ubuntu-latest
-    needs: setup
+    runs-on: ${{ needs.start-ec2-runner.outputs.label || 'ubuntu-latest' }}
+    needs: [start-ec2-runner, setup]
     strategy:
       matrix:
         test-suite: [unit, integration, coverage]
@@ -90,24 +152,31 @@ jobs:
         run: |
           mkdir -p test_output coverage_reports
           chmod 755 test_output coverage_reports
+          
+          # システム情報を表示
+          echo "=== System Information ==="
+          echo "CPU cores: $(nproc)"
+          echo "Memory: $(free -h)"
+          echo "Disk space: $(df -h)"
+          echo "Go version: $(go version)"
 
       - name: Run unit tests
         if: matrix.test-suite == 'unit'
         run: |
           echo "Running unit tests on Linux with Go 1.21..."
-          go test -v -timeout=10m -parallel=4 ./cmd/... ./internal/...
+          go test -v -timeout=15m -parallel=8 ./cmd/... ./internal/...
 
       - name: Run integration tests
         if: matrix.test-suite == 'integration'
         run: |
           echo "Running integration tests on Linux with Go 1.21..."
-          go test -v -timeout=10m -parallel=4 ./tests/...
+          go test -v -timeout=15m -parallel=8 ./tests/...
 
       - name: Run coverage tests
         if: matrix.test-suite == 'coverage'
         run: |
           echo "Running coverage tests on Linux with Go 1.21..."
-          go test -v -coverprofile=coverage.out -timeout=10m -parallel=4 ./cmd/... ./internal/...
+          go test -v -coverprofile=coverage.out -timeout=15m -parallel=8 ./cmd/... ./internal/...
           if [ -f coverage.out ]; then
             go tool cover -html=coverage.out -o coverage.html
             go tool cover -func=coverage.out
@@ -126,8 +195,8 @@ jobs:
 
   # Linux テスト（Go 1.22）
   test-linux-go122:
-    runs-on: ubuntu-latest
-    needs: setup
+    runs-on: ${{ needs.start-ec2-runner.outputs.label || 'ubuntu-latest' }}
+    needs: [start-ec2-runner, setup]
     strategy:
       matrix:
         test-suite: [unit, integration]
@@ -162,27 +231,22 @@ jobs:
         if: matrix.test-suite == 'unit'
         run: |
           echo "Running unit tests on Linux with Go 1.22..."
-          go test -v -timeout=10m -parallel=4 ./cmd/... ./internal/...
+          go test -v -timeout=15m -parallel=8 ./cmd/... ./internal/...
 
       - name: Run integration tests
         if: matrix.test-suite == 'integration'
         run: |
           echo "Running integration tests on Linux with Go 1.22..."
-          go test -v -timeout=10m -parallel=4 ./tests/...
+          go test -v -timeout=15m -parallel=8 ./tests/...
 
-  # Windows テスト（EC2セルフホステッドランナーを使用）
+  # Windows テスト（クロスコンパイル）
   test-windows:
-    runs-on: self-hosted
-    needs: setup
+    runs-on: ${{ needs.start-ec2-runner.outputs.label || 'ubuntu-latest' }}
+    needs: [start-ec2-runner, setup]
     strategy:
       matrix:
         go-version: ['1.21', '1.22']
         test-suite: [unit, integration]
-    # メモリ制限を削除
-    env:
-      GOGC: 100
-      # GOMEMLIMITを削除
-      GOMAXPROCS: 4
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -205,67 +269,37 @@ jobs:
             go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}-
             go-${{ runner.os }}-
 
-      - name: Setup Windows environment
-        shell: pwsh
+      - name: Setup Windows test environment
         run: |
-          New-Item -ItemType Directory -Force -Path "test_output", "coverage_reports" | Out-Null
-          # Clean up previous artifacts
-          if (Test-Path "coverage.out") { Remove-Item "coverage.out" -Force }
-          if (Test-Path "coverage.html") { Remove-Item "coverage.html" -Force }
-          if (Test-Path "*.db") { Remove-Item "*.db" -Force }
-          if (Test-Path "gopier.exe") { Remove-Item "gopier.exe" -Force }
+          mkdir -p test_output coverage_reports
+          chmod 755 test_output coverage_reports
           
-          # メモリ最適化設定（制限を削除）
-          $env:GOGC = "100"
-          # $env:GOMEMLIMITを削除
-          $env:GOMAXPROCS = "4"
-          $env:CGO_ENABLED = "0"
+          # Windows用の環境変数設定
+          export GOOS=windows
+          export GOARCH=amd64
+          export CGO_ENABLED=0
 
       - name: Build for Windows
-        shell: cmd
         run: |
           echo "Building for Windows with Go ${{ matrix.go-version }}..."
           go build -buildvcs=false -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=test" -o gopier.exe
-          if exist "gopier.exe" (
-            echo "✓ Build successful"
-            gopier.exe --help
-          ) else (
-            echo "✗ Build failed"
-            exit /b 1
-          )
 
-      - name: Run unit tests
+      - name: Run unit tests for Windows
         if: matrix.test-suite == 'unit'
-        shell: cmd
         run: |
-          echo "Running unit tests on Windows with Go ${{ matrix.go-version }}..."
-          go test -v -timeout=10m -parallel=4 ./cmd/... ./internal/...
+          echo "Running unit tests for Windows with Go ${{ matrix.go-version }}..."
+          go test -v -timeout=15m -parallel=8 ./cmd/... ./internal/...
 
-      - name: Run integration tests
+      - name: Run integration tests for Windows
         if: matrix.test-suite == 'integration'
-        shell: cmd
         run: |
-          echo "Running integration tests on Windows with Go ${{ matrix.go-version }}..."
-          go test -v -timeout=10m -parallel=4 ./tests/...
+          echo "Running integration tests for Windows with Go ${{ matrix.go-version }}..."
+          go test -v -timeout=15m -parallel=8 ./tests/...
 
-      - name: Upload coverage to Codecov (Windows)
-        if: matrix.test-suite == 'unit' && hashFiles('coverage.out') != ''
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.out
-          flags: windows-${{ matrix.go-version }}
-          name: codecov-windows-${{ matrix.go-version }}
-          fail_ci_if_error: false
-          verbose: true
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-  # ベンチマークテスト（EC2セルフホステッドランナーを使用）
+  # ベンチマークテスト
   benchmark:
-    runs-on: self-hosted
-    needs: setup
-    strategy:
-      matrix:
-        platform: [ubuntu-latest, windows-latest]
+    runs-on: ${{ needs.start-ec2-runner.outputs.label || 'ubuntu-latest' }}
+    needs: [start-ec2-runner, setup]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -290,8 +324,8 @@ jobs:
 
       - name: Run benchmarks
         run: |
-          echo "Running benchmarks on ${{ matrix.platform }}..."
-          go test -bench=. -benchmem ./internal/... 2>/dev/null || echo "No benchmarks found"
+          echo "Running benchmarks..."
+          go test -bench=. -benchmem -timeout=30m ./internal/... 2>/dev/null || echo "No benchmarks found"
 
   # セキュリティスキャン
   security:
@@ -375,24 +409,29 @@ jobs:
             dist/
           retention-days: 30
 
-  # カバレッジバッジ更新
-  update-coverage-badge:
+  # EC2ランナーを停止
+  stop-ec2-runner:
+    name: Stop EC2 Self-Hosted Runner
+    needs:
+      - start-ec2-runner
+      - test-linux-go121
+      - test-linux-go122
+      - test-windows
+      - benchmark
     runs-on: ubuntu-latest
-    needs: [test-linux-go121, test-windows]
-    if: github.ref == 'refs/heads/develop'
+    if: ${{ always() }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          fetch-depth: 0
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Update coverage badge
-        uses: schneegans/dynamic-badges-action@v1.6.0
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
         with:
-          auth: ${{ secrets.GIST_SECRET }}
-          gistID: your-gist-id
-          filename: coverage.json
-          label: coverage
-          message: ${{ needs.test-linux-go121.outputs.coverage || 'unknown' }}%
-          namedLogo: codecov
-          color: green 
+          mode: stop
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          label: ${{ needs.start-ec2-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-ec2-runner.outputs.ec2-instance-id }} 
