@@ -27,11 +27,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
     
-    # Windows環境での高度なメモリ最適化
+    # Windows環境での基本設定
     env:
-      GOGC: 25
-      GOMEMLIMIT: 256MiB
-      GOMAXPROCS: 1
       CGO_ENABLED: 0
       GOFLAGS: "-buildvcs=false"
     
@@ -88,17 +85,11 @@ jobs:
           # 不要なプロセスを終了
           Get-Process | Where-Object {$_.ProcessName -like "*go*" -or $_.ProcessName -like "*gopier*"} | Stop-Process -Force -ErrorAction SilentlyContinue
           
-          # メモリ最適化設定
-          $env:GOGC = "25"
-          $env:GOMEMLIMIT = "256MiB"
-          $env:GOMAXPROCS = "1"
+          # 基本設定
           $env:CGO_ENABLED = "0"
           $env:GOFLAGS = "-buildvcs=false"
           
           Write-Host "=== Environment Variables ==="
-          Write-Host "GOGC: $env:GOGC"
-          Write-Host "GOMEMLIMIT: $env:GOMEMLIMIT"
-          Write-Host "GOMAXPROCS: $env:GOMAXPROCS"
           Write-Host "CGO_ENABLED: $env:CGO_ENABLED"
           Write-Host "GOFLAGS: $env:GOFLAGS"
         shell: pwsh
@@ -106,7 +97,16 @@ jobs:
       - name: Install dependencies
         run: |
           Write-Host "Installing dependencies..."
+          
+          # 依存関係を段階的にインストール
+          Write-Host "Step 1: Verifying go.mod..."
+          go mod verify
+          
+          Write-Host "Step 2: Downloading modules..."
           go mod download
+          
+          Write-Host "Step 3: Tidying modules..."
+          go mod tidy
           
           # 依存関係のサイズを確認
           Write-Host "=== Module Cache Size ==="
@@ -115,6 +115,8 @@ jobs:
             $size = (Get-ChildItem -Path $moduleCache -Recurse | Measure-Object -Property Length -Sum).Sum
             Write-Host "Module cache size: $([math]::Round($size / 1MB, 0)) MB"
           }
+          
+          Write-Host "Dependencies installed successfully"
         shell: pwsh
 
       - name: Run optimized tests
@@ -127,7 +129,7 @@ jobs:
           Write-Host "Current process memory: $([math]::Round($memoryBefore / 1MB, 0)) MB"
           
           # テスト実行
-          $testResult = go test -v -timeout=8m -parallel=1 ${{ inputs.test-packages }}
+          $testResult = go test -v -timeout=8m ${{ inputs.test-packages }}
           $exitCode = $LASTEXITCODE
           
           # テスト実行後のメモリ状態を確認
