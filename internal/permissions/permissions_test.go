@@ -1,6 +1,7 @@
 package permissions
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -43,7 +44,7 @@ func TestCopyFilePermissions_NonWindows(t *testing.T) {
 		t.Error("非Windows環境ではエラーが発生すべきです")
 	}
 
-	expectedError := "ファイル権限のコピーはWindowsでのみサポートされています"
+	expectedError := fmt.Sprintf("ファイル権限のコピーはWindowsでのみサポートされています（現在のプラットフォーム: %s）", runtime.GOOS)
 	if err.Error() != expectedError {
 		t.Errorf("期待されるエラーメッセージ: %s, 実際: %s", expectedError, err.Error())
 	}
@@ -67,7 +68,7 @@ func TestCopyDirectoryPermissions_NonWindows(t *testing.T) {
 		t.Error("非Windows環境ではエラーが発生すべきです")
 	}
 
-	expectedError := "ディレクトリ権限のコピーはWindowsでのみサポートされています"
+	expectedError := fmt.Sprintf("ディレクトリ権限のコピーはWindowsでのみサポートされています（現在のプラットフォーム: %s）", runtime.GOOS)
 	if err.Error() != expectedError {
 		t.Errorf("期待されるエラーメッセージ: %s, 実際: %s", expectedError, err.Error())
 	}
