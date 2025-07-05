@@ -47,7 +47,7 @@ jobs:
       go-version: '1.21'
       platform: '["self-hosted", "Windows"]'
       coverage-flag: ${{ github.ref == 'refs/heads/develop' && 'develop' || 'unittests' }}
-      timeout-minutes: 25
+      timeout-minutes: 35
 
   test-windows-go122:
     uses: ./.github/workflows/test.yml
@@ -55,7 +55,7 @@ jobs:
       go-version: '1.22'
       platform: '["self-hosted", "Windows"]'
       coverage-flag: ${{ github.ref == 'refs/heads/develop' && 'develop' || 'unittests' }}
-      timeout-minutes: 25
+      timeout-minutes: 35
 
 
 

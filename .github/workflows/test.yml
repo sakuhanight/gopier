@@ -82,24 +82,25 @@ jobs:
       - name: Build (Windows only)
         if: runner.os == 'Windows'
         run: |
-          echo "Building with standard configuration..."
+          echo "Building with optimized configuration..."
           
-          REM 通常のビルド設定
-          set GOGC=50
-          set GOMEMLIMIT=512MiB
-          set GOMAXPROCS=2
+          REM 最適化されたビルド設定
+          set GOGC=100
+          set GOMEMLIMIT=1GiB
+          set GOMAXPROCS=4
+          set CGO_ENABLED=0
           
           REM 依存関係を事前にダウンロード
           echo "Downloading dependencies..."
           go mod download
           
-          REM 通常版ビルド実行
-          echo "Running standard build..."
+          REM 最適化版ビルド実行
+          echo "Running optimized build..."
           VERSION=test
           BUILD_TIME=%DATE%_%TIME%
           go build -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=%VERSION% -X github.com/sakuhanight/gopier/cmd.BuildTime=%BUILD_TIME%" -o gopier.exe
           if %ERRORLEVEL% neq 0 (
-            echo "Standard build failed, trying with build.ps1..."
+            echo "Optimized build failed, trying with build.ps1..."
             build.ps1 build
             if %ERRORLEVEL% neq 0 (
               echo "Build failed with exit code: %ERRORLEVEL%"
@@ -116,7 +117,7 @@ jobs:
             exit /b 1
           )
         shell: cmd
-        timeout-minutes: 10
+        timeout-minutes: 8
 
       - name: Run unit tests (Linux/macOS)
         if: (inputs.test-type == 'unit' || inputs.test-type == 'all') && runner.os != 'Windows'
@@ -139,13 +140,13 @@ jobs:
           echo "Running unit tests for Go ${{ inputs.go-version }} on Windows..."
           
           REM メモリ最適化設定
-          set GOGC=50
-          set GOMEMLIMIT=256MiB
-          set GOMAXPROCS=2
+          set GOGC=100
+          set GOMEMLIMIT=512MiB
+          set GOMAXPROCS=4
           
-          REM Unit tests
+          REM Unit tests (最適化版)
           echo "Running unit tests..."
-          go test -v -timeout=10m -parallel=2 ./cmd/... ./internal/...
+          go test -v -timeout=8m -parallel=4 ./cmd/... ./internal/...
           if %ERRORLEVEL% neq 0 (
             echo "Unit tests failed with exit code: %ERRORLEVEL%"
             exit /b %ERRORLEVEL%
@@ -172,13 +173,13 @@ jobs:
           echo "Running integration tests for Go ${{ inputs.go-version }} on Windows..."
           
           REM メモリ最適化設定
-          set GOGC=50
-          set GOMEMLIMIT=256MiB
-          set GOMAXPROCS=2
+          set GOGC=100
+          set GOMEMLIMIT=512MiB
+          set GOMAXPROCS=4
           
-          REM Integration tests
+          REM Integration tests (最適化版)
           echo "Running integration tests..."
-          go test -v -timeout=10m -parallel=2 ./tests/...
+          go test -v -timeout=8m -parallel=4 ./tests/...
           if %ERRORLEVEL% neq 0 (
             echo "Integration tests failed with exit code: %ERRORLEVEL%"
             exit /b %ERRORLEVEL%
@@ -210,13 +211,13 @@ jobs:
           echo "Running tests with coverage on Windows..."
           
           REM メモリ最適化設定
-          set GOGC=50
-          set GOMEMLIMIT=256MiB
-          set GOMAXPROCS=2
+          set GOGC=100
+          set GOMEMLIMIT=512MiB
+          set GOMAXPROCS=4
           
-          REM Coverage tests
+          REM Coverage tests (最適化版)
           for /f "tokens=*" %%i in ('go list ./internal/...') do set PKGS=%%i
-          go test -v -coverprofile=coverage.out -timeout=10m -parallel=2 %PKGS%
+          go test -v -coverprofile=coverage.out -timeout=8m -parallel=4 %PKGS%
           if %ERRORLEVEL% neq 0 (
             echo "Coverage tests failed with exit code: %ERRORLEVEL%"
             exit /b %ERRORLEVEL%
