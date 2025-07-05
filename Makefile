@@ -39,6 +39,19 @@ build:
 	go build -ldflags "$$LDFLAGS" -o $(BINARY_NAME)
 	@echo "ビルド完了: $(BINARY_NAME)"
 
+# CI用軽量ビルド（最適化）
+.PHONY: build-ci
+build-ci:
+	@echo "CI用軽量ビルド中..."
+	@VERSION=$${VERSION:-"ci-build"}; \
+	BUILD_TIME=$$(date '+%Y-%m-%d_%H-%M-%S'); \
+	LDFLAGS="-s -w -X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME"; \
+	echo "Version: $$VERSION"; \
+	echo "BuildTime: $$BUILD_TIME"; \
+	set -x; \
+	go build -buildvcs=false -ldflags "$$LDFLAGS" -o $(BINARY_NAME)
+	@echo "CI用軽量ビルド完了: $(BINARY_NAME)"
+
 # リリースビルド（最適化）
 .PHONY: release
 release:
