@@ -82,34 +82,28 @@ jobs:
       - name: Build (Windows only)
         if: runner.os == 'Windows'
         run: |
-          echo "Building with memory optimization..."
+          echo "Building with standard configuration..."
           
-          REM メモリ使用量を最適化
-          set GOGC=10
-          set GOMEMLIMIT=128MiB
-          set GOMAXPROCS=1
-          set CGO_ENABLED=0
+          REM 通常のビルド設定
+          set GOGC=50
+          set GOMEMLIMIT=512MiB
+          set GOMAXPROCS=2
           
-          REM ビルドキャッシュをクリア
-          go clean -cache
-          
-          REM 依存関係を事前にダウンロード（軽量版）
+          REM 依存関係を事前にダウンロード
           echo "Downloading dependencies..."
-          go mod download -x
+          go mod download
           
-          REM ビルド実行（軽量版）
-          echo "Running lightweight build..."
-          go build -buildvcs=false -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=test -X github.com/sakuhanight/gopier/cmd.BuildTime=%DATE%_%TIME%" -o gopier.exe
+          REM 通常版ビルド実行
+          echo "Running standard build..."
+          VERSION=test
+          BUILD_TIME=%DATE%_%TIME%
+          go build -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=%VERSION% -X github.com/sakuhanight/gopier/cmd.BuildTime=%BUILD_TIME%" -o gopier.exe
           if %ERRORLEVEL% neq 0 (
-            echo "Direct build failed, trying minimal build..."
-            go build -buildvcs=false -o gopier.exe
+            echo "Standard build failed, trying with build.ps1..."
+            build.ps1 build
             if %ERRORLEVEL% neq 0 (
-              echo "Minimal build failed, trying with build.ps1..."
-              build.ps1 build
-              if %ERRORLEVEL% neq 0 (
-                echo "Build failed with exit code: %ERRORLEVEL%"
-                exit /b %ERRORLEVEL%
-              )
+              echo "Build failed with exit code: %ERRORLEVEL%"
+              exit /b %ERRORLEVEL%
             )
           )
           
@@ -122,7 +116,7 @@ jobs:
             exit /b 1
           )
         shell: cmd
-        timeout-minutes: 5
+        timeout-minutes: 10
 
       - name: Run unit tests
         if: inputs.test-type == 'unit' || inputs.test-type == 'all'
