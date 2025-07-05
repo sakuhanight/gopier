@@ -38,6 +38,7 @@ jobs:
     env:
       GOGC: 50
       GOMEMLIMIT: 512MiB
+      GOMAXPROCS: 2
     
     steps:
       - name: Checkout code
@@ -117,7 +118,7 @@ jobs:
             exit /b 1
           )
         shell: cmd
-        timeout-minutes: 8
+        timeout-minutes: 6
 
       - name: Run unit tests (Linux/macOS)
         if: (inputs.test-type == 'unit' || inputs.test-type == 'all') && runner.os != 'Windows'
@@ -146,7 +147,7 @@ jobs:
           
           REM Unit tests (最適化版)
           echo "Running unit tests..."
-          go test -v -timeout=8m -parallel=4 ./cmd/... ./internal/...
+          go test -v -timeout=6m -parallel=4 ./cmd/... ./internal/...
           if %ERRORLEVEL% neq 0 (
             echo "Unit tests failed with exit code: %ERRORLEVEL%"
             exit /b %ERRORLEVEL%
@@ -179,7 +180,7 @@ jobs:
           
           REM Integration tests (最適化版)
           echo "Running integration tests..."
-          go test -v -timeout=8m -parallel=4 ./tests/...
+          go test -v -timeout=6m -parallel=4 ./tests/...
           if %ERRORLEVEL% neq 0 (
             echo "Integration tests failed with exit code: %ERRORLEVEL%"
             exit /b %ERRORLEVEL%
@@ -217,7 +218,7 @@ jobs:
           
           REM Coverage tests (最適化版)
           for /f "tokens=*" %%i in ('go list ./internal/...') do set PKGS=%%i
-          go test -v -coverprofile=coverage.out -timeout=8m -parallel=4 %PKGS%
+          go test -v -coverprofile=coverage.out -timeout=6m -parallel=4 %PKGS%
           if %ERRORLEVEL% neq 0 (
             echo "Coverage tests failed with exit code: %ERRORLEVEL%"
             exit /b %ERRORLEVEL%

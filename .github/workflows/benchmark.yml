@@ -93,12 +93,16 @@ jobs:
         run: |
           echo "Running benchmark tests for Go ${{ inputs.go-version }} on Windows..."
           
-          # Windows環境でのベンチマークテスト（通常版）
+          REM Windows環境でのベンチマークテスト（最適化版）
           echo "Running copier benchmarks on Windows..."
-          go test -v -bench=. -benchmem -timeout=15m ./internal/copier/... || exit 1
+          go test -v -bench=. -benchmem -timeout=10m ./internal/copier/...
+          if %ERRORLEVEL% neq 0 (
+            echo "Benchmark tests failed with exit code: %ERRORLEVEL%"
+            exit /b %ERRORLEVEL%
+          )
           
-          # ベンチマーク結果をファイルに保存
-          go test -v -bench=. -benchmem -timeout=15m ./internal/copier/... > benchmark_output/copier_benchmarks.txt 2>&1 || echo "Benchmark output saved"
+          REM ベンチマーク結果をファイルに保存
+          go test -v -bench=. -benchmem -timeout=10m ./internal/copier/... > benchmark_output/copier_benchmarks.txt 2>&1
           
           echo "Windows benchmark tests completed"
         shell: cmd
