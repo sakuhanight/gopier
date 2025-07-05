@@ -37,6 +37,15 @@ var (
 	procGetSecurityDescriptorLength = advapi32.NewProc("GetSecurityDescriptorLength")
 )
 
+// ACL represents a Windows Access Control List
+type ACL struct {
+	AclRevision byte
+	Sbz1        byte
+	AclSize     uint16
+	AceCount    uint16
+	Sbz2        uint16
+}
+
 // SecurityDescriptor represents a Windows security descriptor
 type SecurityDescriptor struct {
 	Revision byte
@@ -44,8 +53,8 @@ type SecurityDescriptor struct {
 	Control  uint16
 	Owner    *syscall.SID
 	Group    *syscall.SID
-	Sacl     *syscall.ACL
-	Dacl     *syscall.ACL
+	Sacl     *ACL
+	Dacl     *ACL
 }
 
 // CopyFilePermissions copies file permissions from source to destination
