@@ -71,14 +71,14 @@ jobs:
       - name: Setup benchmark environment (Windows)
         if: runner.os == 'Windows'
         run: |
-          New-Item -ItemType Directory -Force -Path "benchmark_output" | Out-Null
+          mkdir benchmark_output 2>nul || echo "Directory may already exist"
           
-          # ベンチマーク用の環境変数を設定
-          echo "GOGC=$env:GOGC"
-          echo "GOMEMLIMIT=$env:GOMEMLIMIT"
-          echo "GOMAXPROCS=$env:GOMAXPROCS"
-          echo "BENCHMARK_MODE=$env:BENCHMARK_MODE"
-        shell: pwsh
+          REM ベンチマーク用の環境変数を設定
+          echo "GOGC=%GOGC%"
+          echo "GOMEMLIMIT=%GOMEMLIMIT%"
+          echo "GOMAXPROCS=%GOMAXPROCS%"
+          echo "BENCHMARK_MODE=%BENCHMARK_MODE%"
+        shell: cmd
 
       - name: Run benchmark tests
         run: |

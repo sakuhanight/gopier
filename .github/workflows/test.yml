@@ -74,15 +74,16 @@ jobs:
       - name: Setup test environment (Windows)
         if: runner.os == 'Windows'
         run: |
-          New-Item -ItemType Directory -Force -Path "test_output", "test_data", "coverage_reports" | Out-Null
-          # Clean up previous artifacts
-          if (Test-Path "coverage.out") { Remove-Item "coverage.out" -Force }
-          if (Test-Path "coverage.html") { Remove-Item "coverage.html" -Force }
-          if (Test-Path "*.db") { Remove-Item "*.db" -Force }
-          if (Test-Path "gopier.exe") { Remove-Item "gopier.exe" -Force }
-          # Kill hanging processes
-          Get-Process | Where-Object {$_.ProcessName -like "*go*" -or $_.ProcessName -like "*gopier*"} | Stop-Process -Force -ErrorAction SilentlyContinue
-        shell: pwsh
+          mkdir test_output test_data coverage_reports 2>nul || echo "Directories may already exist"
+          REM Clean up previous artifacts
+          if exist "coverage.out" del /f "coverage.out"
+          if exist "coverage.html" del /f "coverage.html"
+          if exist "*.db" del /f "*.db"
+          if exist "gopier.exe" del /f "gopier.exe"
+          REM Kill hanging processes
+          taskkill /f /im go.exe 2>nul || echo "No go processes to kill"
+          taskkill /f /im gopier.exe 2>nul || echo "No gopier processes to kill"
+        shell: cmd
 
       - name: Build (Windows only)
         if: runner.os == 'Windows'
