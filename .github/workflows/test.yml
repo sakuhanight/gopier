@@ -120,25 +120,38 @@ jobs:
         shell: cmd
         timeout-minutes: 5
 
-      - name: Run unit tests (Linux/macOS)
+      - name: Run internal unit tests (Linux/macOS)
         if: (inputs.test-type == 'unit' || inputs.test-type == 'all') && runner.os != 'Windows'
         run: |
-          echo "Running unit tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
+          echo "Running internal unit tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
           
           # メモリ最適化設定
           export GOGC=50
           export GOMEMLIMIT=256MiB
           export GOMAXPROCS=2
           
-          # Unit tests
-          echo "Running unit tests..."
-          # Windows専用テストは自動的にスキップされる（runtime.GOOS != "windows"の条件で）
-          go test -v -timeout=10m -parallel=2 ./cmd/... ./internal/... || exit 1
+          # Internal unit tests
+          echo "Running internal unit tests..."
+          go test -v -timeout=10m -parallel=2 ./internal/... || exit 1
 
-      - name: Run unit tests (Windows)
+      - name: Run cmd unit tests (Linux/macOS)
+        if: (inputs.test-type == 'unit' || inputs.test-type == 'all') && runner.os != 'Windows'
+        run: |
+          echo "Running cmd unit tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
+          
+          # メモリ最適化設定
+          export GOGC=50
+          export GOMEMLIMIT=256MiB
+          export GOMAXPROCS=2
+          
+          # Cmd unit tests
+          echo "Running cmd unit tests..."
+          go test -v -timeout=10m -parallel=2 ./cmd/... || exit 1
+
+      - name: Run internal unit tests (Windows)
         if: (inputs.test-type == 'unit' || inputs.test-type == 'all') && runner.os == 'Windows'
         run: |
-          echo "Running unit tests for Go ${{ inputs.go-version }} on Windows..."
+          echo "Running internal unit tests for Go ${{ inputs.go-version }} on Windows..."
           
           REM 軽量メモリ設定
           set GOGC=200
@@ -146,11 +159,31 @@ jobs:
           set GOMAXPROCS=2
           set CGO_ENABLED=0
           
-          REM Unit tests (軽量版)
-          echo "Running unit tests..."
-          go test -v -timeout=5m -parallel=2 ./cmd/... ./internal/...
+          REM Internal unit tests (軽量版)
+          echo "Running internal unit tests..."
+          go test -v -timeout=5m -parallel=2 ./internal/...
           if %ERRORLEVEL% neq 0 (
-            echo "Unit tests failed with exit code: %ERRORLEVEL%"
+            echo "Internal unit tests failed with exit code: %ERRORLEVEL%"
+            exit /b %ERRORLEVEL%
+          )
+        shell: cmd
+
+      - name: Run cmd unit tests (Windows)
+        if: (inputs.test-type == 'unit' || inputs.test-type == 'all') && runner.os == 'Windows'
+        run: |
+          echo "Running cmd unit tests for Go ${{ inputs.go-version }} on Windows..."
+          
+          REM 軽量メモリ設定
+          set GOGC=200
+          set GOMEMLIMIT=256MiB
+          set GOMAXPROCS=2
+          set CGO_ENABLED=0
+          
+          REM Cmd unit tests (軽量版)
+          echo "Running cmd unit tests..."
+          go test -v -timeout=5m -parallel=2 ./cmd/...
+          if %ERRORLEVEL% neq 0 (
+            echo "Cmd unit tests failed with exit code: %ERRORLEVEL%"
             exit /b %ERRORLEVEL%
           )
         shell: cmd
