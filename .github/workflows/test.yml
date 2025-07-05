@@ -82,15 +82,6 @@ jobs:
           if (Test-Path "gopier.exe") { Remove-Item "gopier.exe" -Force }
           # Kill hanging processes
           Get-Process | Where-Object {$_.ProcessName -like "*go*" -or $_.ProcessName -like "*gopier*"} | Stop-Process -Force -ErrorAction SilentlyContinue
-          
-          # メモリ使用量を確認
-          try {
-            $memoryInfo = Get-ComputerInfo | Select-Object TotalPhysicalMemory, AvailablePhysicalMemory
-            Write-Host "Total memory: $([math]::Round($memoryInfo.TotalPhysicalMemory / 1MB, 0)) MB"
-            Write-Host "Available memory: $([math]::Round($memoryInfo.AvailablePhysicalMemory / 1MB, 0)) MB"
-          } catch {
-            Write-Host "Memory info: Unable to get system information"
-          }
         shell: pwsh
 
       - name: Build (Windows only)
