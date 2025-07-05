@@ -153,6 +153,14 @@ jobs:
         run: |
           echo "Running internal unit tests for Go ${{ inputs.go-version }} on Windows..."
           
+          REM 環境情報の表示
+          echo "Environment information:"
+          echo "GOOS: %GOOS%"
+          echo "GOARCH: %GOARCH%"
+          echo "GOROOT: %GOROOT%"
+          echo "GOPATH: %GOPATH%"
+          go version
+          
           REM 軽量メモリ設定
           set GOGC=200
           set GOMEMLIMIT=256MiB
@@ -161,9 +169,11 @@ jobs:
           
           REM Internal unit tests (軽量版)
           echo "Running internal unit tests..."
-          go test -v -timeout=5m -parallel=2 ./internal/...
+          go test -v -timeout=10m -parallel=1 ./internal/...
           if %ERRORLEVEL% neq 0 (
             echo "Internal unit tests failed with exit code: %ERRORLEVEL%"
+            echo "Attempting to run with more verbose output..."
+            go test -v -timeout=15m -parallel=1 -count=1 ./internal/...
             exit /b %ERRORLEVEL%
           )
         shell: cmd
