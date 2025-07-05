@@ -56,7 +56,8 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Setup benchmark environment
+      - name: Setup benchmark environment (Linux/macOS)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p benchmark_output
           chmod 755 benchmark_output
@@ -66,6 +67,18 @@ jobs:
           echo "GOMEMLIMIT=$GOMEMLIMIT"
           echo "GOMAXPROCS=$GOMAXPROCS"
           echo "BENCHMARK_MODE=$BENCHMARK_MODE"
+
+      - name: Setup benchmark environment (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force -Path "benchmark_output" | Out-Null
+          
+          # ベンチマーク用の環境変数を設定
+          echo "GOGC=$env:GOGC"
+          echo "GOMEMLIMIT=$env:GOMEMLIMIT"
+          echo "GOMAXPROCS=$env:GOMAXPROCS"
+          echo "BENCHMARK_MODE=$env:BENCHMARK_MODE"
+        shell: pwsh
 
       - name: Run benchmark tests
         run: |
