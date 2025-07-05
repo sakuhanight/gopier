@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestNewLogger(t *testing.T) {
@@ -79,6 +80,9 @@ func TestNewLoggerWithFile(t *testing.T) {
 
 	// ロガーを閉じる
 	logger.Close()
+
+	// Windows環境でのファイルロック問題を回避するため、少し待機
+	time.Sleep(100 * time.Millisecond)
 }
 
 func TestLoggerMethods(t *testing.T) {
@@ -180,12 +184,17 @@ func TestLoggerFileCreation(t *testing.T) {
 	if logger == nil {
 		t.Fatal("NewLogger() が nil を返しました")
 	}
-	defer logger.Close()
 
 	// ネストしたディレクトリが作成されているか確認
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {
 		t.Error("ネストしたディレクトリのログファイルが作成されていません")
 	}
+
+	// ロガーを閉じる
+	logger.Close()
+
+	// Windows環境でのファイルロック問題を回避するため、少し待機
+	time.Sleep(100 * time.Millisecond)
 }
 
 func TestLoggerClose(t *testing.T) {
@@ -308,7 +317,6 @@ func TestLogger_Fatal(t *testing.T) {
 
 	// ロガーを作成
 	logger := NewLogger(logPath, true, true)
-	defer logger.Close()
 
 	// Fatal関数をテスト（実際にはos.Exitが呼ばれるため、テストでは実行しない）
 	// このテストでは主にFatal関数の構造をカバー
@@ -316,6 +324,12 @@ func TestLogger_Fatal(t *testing.T) {
 		// Fatal関数が存在することを確認
 		// 実際の実行は行わない（os.Exitが呼ばれるため）
 	})
+
+	// ロガーを閉じる
+	logger.Close()
+
+	// Windows環境でのファイルロック問題を回避するため、少し待機
+	time.Sleep(100 * time.Millisecond)
 }
 
 func TestLogger_FatalWithFields(t *testing.T) {
@@ -325,13 +339,18 @@ func TestLogger_FatalWithFields(t *testing.T) {
 
 	// ロガーを作成
 	logger := NewLogger(logPath, true, true)
-	defer logger.Close()
 
 	// フィールド付きのFatal関数をテスト
 	t.Run("Fatal関数のフィールド付きテスト", func(t *testing.T) {
 		// Fatal関数が存在することを確認
 		// 実際の実行は行わない（os.Exitが呼ばれるため）
 	})
+
+	// ロガーを閉じる
+	logger.Close()
+
+	// Windows環境でのファイルロック問題を回避するため、少し待機
+	time.Sleep(100 * time.Millisecond)
 }
 
 // TestFatal はFatal関数のテスト

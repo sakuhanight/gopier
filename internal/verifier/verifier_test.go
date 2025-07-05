@@ -1353,7 +1353,6 @@ func TestVerifyFile_WithDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("データベース作成エラー: %v", err)
 	}
-	defer os.Remove(dbPath)
 
 	options := DefaultOptions()
 	verifier := NewVerifier(tempDir, "/dest", options, nil, db)
@@ -1370,6 +1369,12 @@ func TestVerifyFile_WithDatabase(t *testing.T) {
 	if !result.HashMatch {
 		t.Error("ハッシュが一致すべきです")
 	}
+
+	// データベースを明示的に閉じる
+	db.Close()
+
+	// Windows環境でのファイルロック問題を回避するため、少し待機
+	time.Sleep(100 * time.Millisecond)
 }
 
 // TestCheckExtraFiles_Recursive は再帰的な余分ファイルチェックのテスト

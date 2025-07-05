@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -649,9 +650,16 @@ func TestHashFile_EdgeCases(t *testing.T) {
 	}
 	os.WriteFile(largeFile, largeContent, 0644)
 
-	// シンボリックリンク
-	symlinkFile := filepath.Join(tempDir, "symlink.txt")
-	os.Symlink(emptyFile, symlinkFile)
+	// シンボリックリンク（Windows環境ではスキップ）
+	var symlinkFile string
+	if runtime.GOOS != "windows" {
+		symlinkFile = filepath.Join(tempDir, "symlink.txt")
+		err := os.Symlink(emptyFile, symlinkFile)
+		if err != nil {
+			t.Logf("シンボリックリンクの作成に失敗（権限不足の可能性）: %v", err)
+			symlinkFile = ""
+		}
+	}
 
 	hasher := NewHasher(SHA256, 1024)
 
@@ -673,13 +681,15 @@ func TestHashFile_EdgeCases(t *testing.T) {
 		t.Error("大きなファイルのハッシュが空です")
 	}
 
-	// シンボリックリンクのハッシュ
-	symlinkHash, err := hasher.HashFile(symlinkFile)
-	if err != nil {
-		t.Errorf("シンボリックリンクのハッシュ計算が失敗: %v", err)
-	}
-	if symlinkHash == "" {
-		t.Error("シンボリックリンクのハッシュが空です")
+	// シンボリックリンクのハッシュ（Windows環境ではスキップ）
+	if symlinkFile != "" {
+		symlinkHash, err := hasher.HashFile(symlinkFile)
+		if err != nil {
+			t.Errorf("シンボリックリンクのハッシュ計算が失敗: %v", err)
+		}
+		if symlinkHash == "" {
+			t.Error("シンボリックリンクのハッシュが空です")
+		}
 	}
 
 	// 存在しないファイル

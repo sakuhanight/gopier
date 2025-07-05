@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1576,6 +1577,11 @@ func TestCopyFiles_EmptyDirectory(t *testing.T) {
 
 // TestCopyFiles_Symlink はシンボリックリンクのテスト
 func TestCopyFiles_Symlink(t *testing.T) {
+	// Windows環境ではシンボリックリンクのテストをスキップ
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows環境ではシンボリックリンクのテストをスキップします")
+	}
+
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
 	destDir := filepath.Join(tempDir, "dest")
@@ -1588,13 +1594,16 @@ func TestCopyFiles_Symlink(t *testing.T) {
 
 	// シンボリックリンクを作成
 	symlinkFile := filepath.Join(sourceDir, "link.txt")
-	os.Symlink(testFile, symlinkFile)
+	err := os.Symlink(testFile, symlinkFile)
+	if err != nil {
+		t.Skipf("シンボリックリンクの作成に失敗（権限不足の可能性）: %v", err)
+	}
 
 	options := DefaultOptions()
 	log := logger.NewLogger("", true, true) // VerboseなLoggerを正しく初期化
 	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, log)
 
-	err := copier.CopyFiles()
+	err = copier.CopyFiles()
 	if err != nil {
 		t.Errorf("シンボリックリンクでエラーが発生しました: %v", err)
 	}
