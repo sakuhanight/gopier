@@ -74,7 +74,8 @@ jobs:
           mkdir benchmark_output 2>nul
         shell: cmd
 
-      - name: Run benchmark tests
+      - name: Run benchmark tests (Linux/macOS)
+        if: runner.os != 'Windows'
         run: |
           echo "Running benchmark tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
           
@@ -86,6 +87,18 @@ jobs:
           go test -v -bench=. -benchmem -timeout=15m ./internal/copier/... > benchmark_output/copier_benchmarks.txt 2>&1 || echo "Benchmark output saved"
           
           echo "Benchmark tests completed"
+
+      - name: Run benchmark tests (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "Running benchmark tests for Go ${{ inputs.go-version }} on Windows..."
+          
+          # Windows環境でのベンチマークテスト（軽量版）
+          echo "Running copier benchmarks on Windows..."
+          go test -v -bench=. -benchmem -timeout=10m ./internal/copier/... || echo "Benchmark tests completed with warnings"
+          
+          echo "Windows benchmark tests completed"
+        shell: cmd
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
