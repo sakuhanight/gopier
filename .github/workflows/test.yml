@@ -309,23 +309,42 @@ jobs:
         run: |
           echo "Running tests with coverage on Windows..."
           
+          REM 環境情報の表示
+          echo "Environment information:"
+          echo "GOOS: %GOOS%"
+          echo "GOARCH: %GOARCH%"
+          echo "Current directory: %CD%"
+          go version
+          
           REM 軽量メモリ設定
           set GOGC=200
           set GOMEMLIMIT=256MiB
           set GOMAXPROCS=2
           set CGO_ENABLED=0
           
+          REM 依存関係を事前にダウンロード
+          echo "Downloading dependencies..."
+          go mod download
+          
           REM Coverage tests (軽量版)
-          for /f "tokens=*" %%i in ('go list ./internal/...') do set PKGS=%%i
-          go test -v -coverprofile=coverage.out -timeout=5m -parallel=2 %PKGS%
+          echo "Running coverage tests..."
+          go test -v -coverprofile=coverage.out -timeout=10m -parallel=1 ./internal/...
           if %ERRORLEVEL% neq 0 (
             echo "Coverage tests failed with exit code: %ERRORLEVEL%"
+            echo "Attempting to run with more verbose output..."
+            go test -v -coverprofile=coverage.out -timeout=15m -parallel=1 -count=1 ./internal/...
+            set RETRY_EXIT_CODE=%ERRORLEVEL%
+            echo "Retry exit code: %RETRY_EXIT_CODE%"
             exit /b %ERRORLEVEL%
           )
           
           if exist "coverage.out" (
+            echo "Coverage file generated successfully"
             go tool cover -html=coverage.out -o coverage.html 2>nul || echo "HTML report generation skipped"
             go tool cover -func=coverage.out || echo "Coverage function report generation skipped"
+          ) else (
+            echo "Coverage file not found"
+            exit /b 1
           )
         shell: cmd
 
