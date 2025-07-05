@@ -74,15 +74,9 @@ jobs:
       - name: Setup test environment (Windows)
         if: runner.os == 'Windows'
         run: |
-          mkdir test_output test_data coverage_reports 2>nul || echo "Directories may already exist"
-          REM Clean up previous artifacts
-          if exist "coverage.out" del /f "coverage.out"
-          if exist "coverage.html" del /f "coverage.html"
-          if exist "*.db" del /f "*.db"
-          if exist "gopier.exe" del /f "gopier.exe"
-          REM Kill hanging processes
-          taskkill /f /im go.exe 2>nul || echo "No go processes to kill"
-          taskkill /f /im gopier.exe 2>nul || echo "No gopier processes to kill"
+          mkdir test_output 2>nul
+          mkdir test_data 2>nul
+          mkdir coverage_reports 2>nul
         shell: cmd
 
       - name: Build (Windows only)

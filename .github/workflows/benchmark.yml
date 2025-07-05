@@ -71,13 +71,7 @@ jobs:
       - name: Setup benchmark environment (Windows)
         if: runner.os == 'Windows'
         run: |
-          mkdir benchmark_output 2>nul || echo "Directory may already exist"
-          
-          REM ベンチマーク用の環境変数を設定
-          echo "GOGC=%GOGC%"
-          echo "GOMEMLIMIT=%GOMEMLIMIT%"
-          echo "GOMAXPROCS=%GOMAXPROCS%"
-          echo "BENCHMARK_MODE=%BENCHMARK_MODE%"
+          mkdir benchmark_output 2>nul
         shell: cmd
 
       - name: Run benchmark tests
