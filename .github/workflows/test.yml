@@ -118,8 +118,8 @@ jobs:
         shell: cmd
         timeout-minutes: 10
 
-      - name: Run unit tests
-        if: inputs.test-type == 'unit' || inputs.test-type == 'all'
+      - name: Run unit tests (Linux/macOS)
+        if: (inputs.test-type == 'unit' || inputs.test-type == 'all') && runner.os != 'Windows'
         run: |
           echo "Running unit tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
           
@@ -128,13 +128,32 @@ jobs:
           export GOMEMLIMIT=256MiB
           export GOMAXPROCS=2
           
-          # Unit tests (軽量版)
+          # Unit tests
           echo "Running unit tests..."
           # Windows専用テストは自動的にスキップされる（runtime.GOOS != "windows"の条件で）
           go test -v -timeout=10m -parallel=2 ./cmd/... ./internal/... || exit 1
 
-      - name: Run integration tests
-        if: inputs.test-type == 'integration' || inputs.test-type == 'all'
+      - name: Run unit tests (Windows)
+        if: (inputs.test-type == 'unit' || inputs.test-type == 'all') && runner.os == 'Windows'
+        run: |
+          echo "Running unit tests for Go ${{ inputs.go-version }} on Windows..."
+          
+          REM メモリ最適化設定
+          set GOGC=50
+          set GOMEMLIMIT=256MiB
+          set GOMAXPROCS=2
+          
+          REM Unit tests
+          echo "Running unit tests..."
+          go test -v -timeout=10m -parallel=2 ./cmd/... ./internal/...
+          if %ERRORLEVEL% neq 0 (
+            echo "Unit tests failed with exit code: %ERRORLEVEL%"
+            exit /b %ERRORLEVEL%
+          )
+        shell: cmd
+
+      - name: Run integration tests (Linux/macOS)
+        if: (inputs.test-type == 'integration' || inputs.test-type == 'all') && runner.os != 'Windows'
         run: |
           echo "Running integration tests for Go ${{ inputs.go-version }} on ${{ runner.os }}..."
           
@@ -147,8 +166,27 @@ jobs:
           echo "Running integration tests..."
           go test -v -timeout=10m -parallel=2 ./tests/... || exit 1
 
-      - name: Run coverage tests
-        if: inputs.test-type == 'all'
+      - name: Run integration tests (Windows)
+        if: (inputs.test-type == 'integration' || inputs.test-type == 'all') && runner.os == 'Windows'
+        run: |
+          echo "Running integration tests for Go ${{ inputs.go-version }} on Windows..."
+          
+          REM メモリ最適化設定
+          set GOGC=50
+          set GOMEMLIMIT=256MiB
+          set GOMAXPROCS=2
+          
+          REM Integration tests
+          echo "Running integration tests..."
+          go test -v -timeout=10m -parallel=2 ./tests/...
+          if %ERRORLEVEL% neq 0 (
+            echo "Integration tests failed with exit code: %ERRORLEVEL%"
+            exit /b %ERRORLEVEL%
+          )
+        shell: cmd
+
+      - name: Run coverage tests (Linux/macOS)
+        if: inputs.test-type == 'all' && runner.os != 'Windows'
         run: |
           echo "Running tests with coverage..."
           
@@ -165,6 +203,30 @@ jobs:
             go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTML report generation skipped"
             go tool cover -func=coverage.out || echo "Coverage function report generation skipped"
           fi
+
+      - name: Run coverage tests (Windows)
+        if: inputs.test-type == 'all' && runner.os == 'Windows'
+        run: |
+          echo "Running tests with coverage on Windows..."
+          
+          REM メモリ最適化設定
+          set GOGC=50
+          set GOMEMLIMIT=256MiB
+          set GOMAXPROCS=2
+          
+          REM Coverage tests
+          for /f "tokens=*" %%i in ('go list ./internal/...') do set PKGS=%%i
+          go test -v -coverprofile=coverage.out -timeout=10m -parallel=2 %PKGS%
+          if %ERRORLEVEL% neq 0 (
+            echo "Coverage tests failed with exit code: %ERRORLEVEL%"
+            exit /b %ERRORLEVEL%
+          )
+          
+          if exist "coverage.out" (
+            go tool cover -html=coverage.out -o coverage.html 2>nul || echo "HTML report generation skipped"
+            go tool cover -func=coverage.out || echo "Coverage function report generation skipped"
+          )
+        shell: cmd
 
       - name: Upload coverage to Codecov
         if: inputs.test-type == 'all' && hashFiles('coverage.out') != ''
