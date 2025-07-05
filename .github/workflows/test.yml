@@ -159,6 +159,9 @@ jobs:
           echo "GOARCH: %GOARCH%"
           echo "GOROOT: %GOROOT%"
           echo "GOPATH: %GOPATH%"
+          echo "Current directory: %CD%"
+          echo "Available memory:"
+          wmic computersystem get TotalPhysicalMemory
           go version
           
           REM 軽量メモリ設定
@@ -167,14 +170,30 @@ jobs:
           set GOMAXPROCS=2
           set CGO_ENABLED=0
           
+          REM テストファイルの存在確認
+          echo "Checking test files..."
+          dir /s /b *.go | findstr internal
+          
           REM Internal unit tests (軽量版)
           echo "Running internal unit tests..."
-          go test -v -timeout=10m -parallel=1 ./internal/...
-          if %ERRORLEVEL% neq 0 (
-            echo "Internal unit tests failed with exit code: %ERRORLEVEL%"
+          
+          REM 個別パッケージでテスト実行
+          for /f "tokens=*" %%p in ('go list ./internal/...') do (
+            echo "Testing package: %%p"
+            go test -v -timeout=5m -parallel=1 %%p
+            if !ERRORLEVEL! neq 0 (
+              echo "Package %%p failed with exit code: !ERRORLEVEL!"
+              set TEST_EXIT_CODE=!ERRORLEVEL!
+            )
+          )
+          
+          if %TEST_EXIT_CODE% neq 0 (
+            echo "Some internal unit tests failed with exit code: %TEST_EXIT_CODE%"
             echo "Attempting to run with more verbose output..."
-            go test -v -timeout=15m -parallel=1 -count=1 ./internal/...
-            exit /b %ERRORLEVEL%
+            go test -v -timeout=10m -parallel=1 -count=1 ./internal/...
+            set RETRY_EXIT_CODE=%ERRORLEVEL%
+            echo "Retry exit code: %RETRY_EXIT_CODE%"
+            exit /b %TEST_EXIT_CODE%
           )
         shell: cmd
 
