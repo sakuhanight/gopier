@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -735,8 +736,13 @@ func TestDBResetCmd_ActualExecution(t *testing.T) {
 func TestDBCommands_ErrorHandling(t *testing.T) {
 	rootCmd := resetCommands()
 
-	// 存在しないDBファイルでのテスト
-	nonexistentDB := "/nonexistent/path/test.db"
+	// テスト1: 存在しないDBファイルでのテスト（プラットフォーム別のパス）
+	var nonexistentDB string
+	if runtime.GOOS == "windows" {
+		nonexistentDB = "C:\\nonexistent\\path\\test.db"
+	} else {
+		nonexistentDB = "/nonexistent/path/test.db"
+	}
 
 	// 標準出力をキャプチャ
 	rOut, wOut, cleanup := captureOutput(t)
@@ -747,14 +753,15 @@ func TestDBCommands_ErrorHandling(t *testing.T) {
 	err := rootCmd.Execute()
 
 	// パイプの書き込み側を閉じる
-
-	// 出力を読み取る
 	wOut.Close()
 	out, _ := io.ReadAll(rOut)
 	output := string(out)
 
 	// エラーが発生することを期待
 	if err == nil {
+		t.Logf("出力内容: %s", output)
+		t.Logf("使用したパス: %s", nonexistentDB)
+		t.Logf("プラットフォーム: %s", runtime.GOOS)
 		t.Error("存在しないDBファイルでエラーが発生しませんでした")
 	}
 
@@ -762,6 +769,38 @@ func TestDBCommands_ErrorHandling(t *testing.T) {
 	if !strings.Contains(output, "nonexistent") && !strings.Contains(output, "not found") && !strings.Contains(output, "failed") && !strings.Contains(output, "read-only") {
 		t.Logf("出力内容: %s", output)
 		t.Log("エラーメッセージの検証をスキップします（実際のエラーは発生しています）")
+	}
+
+	// テスト2: 無効なDBファイルでのテスト
+	tempDir := t.TempDir()
+	invalidDBPath := filepath.Join(tempDir, "invalid.db")
+
+	// 無効な内容のファイルを作成
+	if err := os.WriteFile(invalidDBPath, []byte("invalid database content"), 0644); err != nil {
+		t.Fatalf("無効なDBファイルの作成に失敗: %v", err)
+	}
+
+	// 新しいコマンドインスタンスを作成
+	rootCmd2 := resetCommands()
+
+	// 標準出力をキャプチャ
+	rOut2, wOut2, cleanup2 := captureOutput(t)
+	defer cleanup2()
+
+	// 無効なDBファイルでコマンド実行
+	rootCmd2.SetArgs([]string{"db", "list", "--db", invalidDBPath})
+	err2 := rootCmd2.Execute()
+
+	// パイプの書き込み側を閉じる
+	wOut2.Close()
+	out2, _ := io.ReadAll(rOut2)
+	output2 := string(out2)
+
+	// エラーが発生することを期待
+	if err2 == nil {
+		t.Logf("無効なDBファイルの出力内容: %s", output2)
+		t.Logf("使用したパス: %s", invalidDBPath)
+		t.Error("無効なDBファイルでエラーが発生しませんでした")
 	}
 }
 
