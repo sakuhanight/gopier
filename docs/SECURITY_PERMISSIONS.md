@@ -180,14 +180,11 @@ echo "Environment: OK"
 echo "Access control: OK"
 ```
 
-## 更新履歴
-
-- **2024-07-04**: 初期設定の作成
-- **2024-07-04**: セキュリティ設定の追加
-- **2024-07-04**: 権限最小化の実装
-
 ## 参考資料
 
 - [GitHub Actions Permissions](https://docs.github.com/en/actions/security-guides/automatic-token-authentication#permissions-for-the-github_token)
 - [Security Hardening for GitHub Actions](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions)
 - [Using GitHub Actions with OIDC](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect) 
+
+
+**最終更新**: 2025/07/06

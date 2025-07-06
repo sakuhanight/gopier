@@ -42,11 +42,30 @@ param(
     [string]$Output = "gopier.exe"
 )
 
+# 共通モジュールを読み込み
+$scriptPath = $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $scriptPath
+Import-Module (Join-Path $scriptDir "scripts\common\GopierCommon.psm1") -Force
+
+# プロジェクトルートに移動
+if (-not (Set-ProjectRoot)) {
+    Write-ErrorLog "プロジェクトルートディレクトリが見つかりません"
+    exit 1
+}
+
+# 設定を取得
+$buildConfig = Get-BuildConfig
+$logConfig = Get-LogConfig
+$platformConfig = Get-PlatformConfig
+
+# ログ設定を適用
+Set-LogConfig -Level $logConfig.Level -EnableFileLog $logConfig.EnableFileLog -LogDirectory $logConfig.LogDirectory
+
 # 設定
 $ErrorActionPreference = "Stop"
 $BinaryName = $Output
-$BuildDir = "build"
-$Version = if (git describe --tags --always --dirty 2>$null) { git describe --tags --always --dirty } else { "dev" }
+$BuildDir = $buildConfig.BuildDir
+$Version = (Get-VersionInfo).Version
 $BuildTime = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $LDFlags = "-X github.com/sakuhanight/gopier/cmd.Version=$Version -X github.com/sakuhanight/gopier/cmd.BuildTime=$BuildTime"
 
@@ -75,88 +94,86 @@ function Test-GoCommand {
 
 # 通常ビルド
 function Build-Project {
-    Write-ColorOutput "ビルド中..." "Green"
+    Write-InfoLog "ビルド中..."
     
     if (-not (Test-GoCommand)) { 
+        Write-ErrorLog "Goがインストールされていないか、PATHに設定されていません"
+        Write-InfoLog "Goをインストールしてください: https://golang.org/dl/"
         exit 1
     }
     
-    try {
+    $executionResult = Measure-ExecutionTime -ScriptBlock {
         # メモリ使用量を最適化
-        $env:GOGC = "50"  # ガベージコレクションをより頻繁に実行
-        $env:GOMEMLIMIT = "512MiB"  # メモリ制限を設定
+        Set-EnvironmentVariable -Name "GOGC" -Value $buildConfig.GarbageCollection
+        Set-EnvironmentVariable -Name "GOMEMLIMIT" -Value $buildConfig.MemoryLimit
         
         # ビルドキャッシュをクリア
         go clean -cache
         
         # 依存関係を事前にダウンロード
-        Write-ColorOutput "依存関係をダウンロード中..." "Yellow"
+        Write-InfoLog "依存関係をダウンロード中..."
         go mod download
         
         # ビルド実行
-        Write-ColorOutput "Goビルド実行中..." "Yellow"
+        Write-InfoLog "Goビルド実行中..."
         go build -ldflags $LDFlags -o $BinaryName
-        if ($LASTEXITCODE -eq 0) {
-            if (Test-Path $BinaryName) {
-                $size = (Get-Item $BinaryName).Length / 1MB
-                Write-ColorOutput "ビルド完了: $BinaryName ($([math]::Round($size, 2)) MB)" "Green"
-                exit 0
-            } else {
-                Write-ColorOutput "エラー: ビルドファイルが生成されませんでした" "Red"
-                exit 1
-            }
+    } -Description "ビルド処理"
+    
+    if ($LASTEXITCODE -eq 0) {
+        $fileInfo = Test-FileWithInfo -Path $BinaryName -GetInfo
+        if ($fileInfo) {
+            $size = Format-FileSize -SizeInBytes $fileInfo.Length
+            Write-InfoLog "ビルド完了: $BinaryName ($size) - 実行時間: $($executionResult.Duration.TotalSeconds.ToString('F2'))秒"
+            exit 0
         } else {
-            Write-ColorOutput "エラー: ビルドに失敗しました" "Red"
+            Write-ErrorLog "ビルドファイルが生成されませんでした"
             exit 1
         }
-    }
-    catch {
-        Write-ColorOutput "ビルドエラー: $_" "Red"
+    } else {
+        Write-ErrorLog "ビルドに失敗しました"
         exit 1
     }
 }
 
 # リリースビルド
 function Build-Release {
-    Write-ColorOutput "リリースビルド中..." "Green"
+    Write-InfoLog "リリースビルド中..."
     
     if (-not (Test-GoCommand)) { 
+        Write-ErrorLog "Goがインストールされていないか、PATHに設定されていません"
         exit 1
     }
     
-    try {
+    $executionResult = Measure-ExecutionTime -ScriptBlock {
         go build -ldflags "$LDFlags -s -w" -o $BinaryName
-        if ($LASTEXITCODE -eq 0) {
-            if (Test-Path $BinaryName) {
-                $size = (Get-Item $BinaryName).Length / 1MB
-                Write-ColorOutput "リリースビルド完了: $BinaryName ($([math]::Round($size, 2)) MB)" "Green"
-                exit 0
-            } else {
-                Write-ColorOutput "エラー: リリースビルドファイルが生成されませんでした" "Red"
-                exit 1
-            }
+    } -Description "リリースビルド処理"
+    
+    if ($LASTEXITCODE -eq 0) {
+        $fileInfo = Test-FileWithInfo -Path $BinaryName -GetInfo
+        if ($fileInfo) {
+            $size = Format-FileSize -SizeInBytes $fileInfo.Length
+            Write-InfoLog "リリースビルド完了: $BinaryName ($size) - 実行時間: $($executionResult.Duration.TotalSeconds.ToString('F2'))秒"
+            exit 0
         } else {
-            Write-ColorOutput "エラー: リリースビルドに失敗しました" "Red"
+            Write-ErrorLog "リリースビルドファイルが生成されませんでした"
             exit 1
         }
-    }
-    catch {
-        Write-ColorOutput "リリースビルドエラー: $_" "Red"
+    } else {
+        Write-ErrorLog "リリースビルドに失敗しました"
         exit 1
     }
 }
 
 # クロスプラットフォームビルド
 function Build-CrossPlatform {
-    Write-ColorOutput "クロスプラットフォームビルド中..." "Green"
+    Write-InfoLog "クロスプラットフォームビルド中..."
     
     if (-not (Test-GoCommand)) { 
+        Write-ErrorLog "Goがインストールされていないか、PATHに設定されていません"
         exit 1
     }
     
-    if (-not (Test-Path $BuildDir)) {
-        New-Item -ItemType Directory -Path $BuildDir | Out-Null
-    }
+    Test-DirectoryWithCreate -Path $BuildDir -CreateIfNotExists
     
     $platforms = @()
     if ($Platform -eq "all") {
@@ -172,166 +189,200 @@ function Build-CrossPlatform {
     }
     
     $buildSuccess = $true
+    $totalStartTime = Get-Date
+    
     foreach ($p in $platforms) {
-        Write-ColorOutput "$($p.OS) $($p.ARCH)..." "Yellow"
-        try {
-            $env:GOOS = $p.OS
-            $env:GOARCH = $p.ARCH
+        Write-InfoLog "$($p.OS) $($p.ARCH) ビルド中..."
+        $platformStartTime = Get-Date
+        
+        $executionResult = Measure-ExecutionTime -ScriptBlock {
+            Set-EnvironmentVariable -Name "GOOS" -Value $p.OS
+            Set-EnvironmentVariable -Name "GOARCH" -Value $p.ARCH
             $outputName = "gopier-$($p.OS)-$($p.ARCH)$($p.Ext)"
             go build -ldflags $LDFlags -o "$BuildDir\$outputName"
-            if ($LASTEXITCODE -eq 0) {
-                Write-ColorOutput "  ✓ $outputName" "Green"
+        } -Description "$($p.OS) $($p.ARCH) ビルド"
+        
+        if ($LASTEXITCODE -eq 0) {
+            $fileInfo = Test-FileWithInfo -Path "$BuildDir\gopier-$($p.OS)-$($p.ARCH)$($p.Ext)" -GetInfo
+            if ($fileInfo) {
+                $size = Format-FileSize -SizeInBytes $fileInfo.Length
+                Write-InfoLog "  ✓ gopier-$($p.OS)-$($p.ARCH)$($p.Ext) ($size) - $($executionResult.Duration.TotalSeconds.ToString('F2'))秒"
             } else {
-                Write-ColorOutput "  ✗ $($p.OS) $($p.ARCH) ビルド失敗" "Red"
+                Write-ErrorLog "  ✗ $($p.OS) $($p.ARCH) ビルドファイルが生成されませんでした"
                 $buildSuccess = $false
             }
-        }
-        catch {
-            Write-ColorOutput "  ✗ $($p.OS) $($p.ARCH) ビルド失敗: $_" "Red"
+        } else {
+            Write-ErrorLog "  ✗ $($p.OS) $($p.ARCH) ビルド失敗"
             $buildSuccess = $false
         }
     }
     
+    $totalDuration = (Get-Date) - $totalStartTime
+    
     if ($buildSuccess) {
-        Write-ColorOutput "クロスプラットフォームビルド完了" "Green"
+        Write-InfoLog "クロスプラットフォームビルド完了 - 総実行時間: $($totalDuration.TotalSeconds.ToString('F2'))秒"
         exit 0
     } else {
-        Write-ColorOutput "クロスプラットフォームビルド失敗" "Red"
+        Write-ErrorLog "クロスプラットフォームビルド失敗 - 総実行時間: $($totalDuration.TotalSeconds.ToString('F2'))秒"
         exit 1
     }
 }
 
 # テスト実行
 function Test-Project {
-    Write-ColorOutput "テスト実行中..." "Green"
+    Write-InfoLog "テスト実行中..."
     
     if (-not (Test-GoCommand)) { 
+        Write-ErrorLog "Goがインストールされていないか、PATHに設定されていません"
         exit 1
     }
     
+    $testConfig = Get-TestConfig
+    $totalStartTime = Get-Date
+    
     try {
-        $env:TESTING = "1"
-        Write-Host "TESTING環境変数: $env:TESTING"
-        Write-ColorOutput "通常テスト実行中..." "Yellow"
-        go test -v ./...
+        Set-EnvironmentVariable -Name "TESTING" -Value "1"
+        
+        # 通常テスト
+        Write-InfoLog "通常テスト実行中..."
+        $normalTestResult = Measure-ExecutionTime -ScriptBlock {
+            go test -v ./...
+        } -Description "通常テスト"
+        
         if ($LASTEXITCODE -eq 0) {
-            Write-ColorOutput "通常テスト成功" "Green"
+            Write-InfoLog "通常テスト成功 - $($normalTestResult.Duration.TotalSeconds.ToString('F2'))秒"
         } else {
-            Write-ColorOutput "通常テスト失敗" "Red"
+            Write-ErrorLog "通常テスト失敗"
             throw "通常テストが失敗しました"
         }
         
-        Write-ColorOutput "統合テスト実行中..." "Yellow"
-        $env:TESTING = "1"
-        go test -v ./tests/...
+        # 統合テスト
+        Write-InfoLog "統合テスト実行中..."
+        $integrationTestResult = Measure-ExecutionTime -ScriptBlock {
+            go test -v ./tests/...
+        } -Description "統合テスト"
+        
         if ($LASTEXITCODE -eq 0) {
-            Write-ColorOutput "統合テスト成功" "Green"
+            Write-InfoLog "統合テスト成功 - $($integrationTestResult.Duration.TotalSeconds.ToString('F2'))秒"
         } else {
-            Write-ColorOutput "統合テスト失敗" "Red"
+            Write-ErrorLog "統合テスト失敗"
             throw "統合テストが失敗しました"
         }
         
-        Write-ColorOutput "テスト完了" "Green"
+        $totalDuration = (Get-Date) - $totalStartTime
+        Write-InfoLog "テスト完了 - 総実行時間: $($totalDuration.TotalSeconds.ToString('F2'))秒"
         exit 0
     }
     catch {
-        Write-ColorOutput "テストエラー: $_" "Red"
+        Write-ErrorLog "テストエラー: $($_.Exception.Message)"
         exit 1
     }
 }
 
 # テストカバレッジ
 function Test-Coverage {
-    Write-ColorOutput "テストカバレッジ実行中..." "Green"
+    Write-InfoLog "テストカバレッジ実行中..."
     
     if (-not (Test-GoCommand)) { 
+        Write-ErrorLog "Goがインストールされていないか、PATHに設定されていません"
         exit 1
     }
     
+    $testConfig = Get-TestConfig
+    $totalStartTime = Get-Date
+    
     try {
-        Write-ColorOutput "通常テストカバレッジ実行中..." "Yellow"
-        $env:TESTING = "1"
-        go test -v -coverprofile=coverage.out ./...
+        Set-EnvironmentVariable -Name "TESTING" -Value "1"
+        
+        # 通常テストカバレッジ
+        Write-InfoLog "通常テストカバレッジ実行中..."
+        $normalCoverageResult = Measure-ExecutionTime -ScriptBlock {
+            go test -v -coverprofile=$($testConfig.CoverageOutput) ./...
+        } -Description "通常テストカバレッジ"
+        
         if ($LASTEXITCODE -eq 0) {
-            Write-ColorOutput "通常テストカバレッジ成功" "Green"
+            Write-InfoLog "通常テストカバレッジ成功 - $($normalCoverageResult.Duration.TotalSeconds.ToString('F2'))秒"
         } else {
-            Write-ColorOutput "通常テストカバレッジ失敗" "Red"
+            Write-ErrorLog "通常テストカバレッジ失敗"
             throw "通常テストカバレッジが失敗しました"
         }
         
-        Write-ColorOutput "統合テストカバレッジ実行中..." "Yellow"
-        $env:TESTING = "1"
-        go test -v -coverprofile=coverage-integration.out ./tests/...
+        # 統合テストカバレッジ
+        Write-InfoLog "統合テストカバレッジ実行中..."
+        $integrationCoverageResult = Measure-ExecutionTime -ScriptBlock {
+            go test -v -coverprofile=coverage-integration.out ./tests/...
+        } -Description "統合テストカバレッジ"
+        
         if ($LASTEXITCODE -eq 0) {
-            Write-ColorOutput "統合テストカバレッジ成功" "Green"
+            Write-InfoLog "統合テストカバレッジ成功 - $($integrationCoverageResult.Duration.TotalSeconds.ToString('F2'))秒"
         } else {
-            Write-ColorOutput "統合テストカバレッジ失敗" "Red"
+            Write-ErrorLog "統合テストカバレッジ失敗"
             throw "統合テストカバレッジが失敗しました"
         }
         
         # カバレッジファイルをマージ
-        if (Test-Path "coverage.out" -and Test-Path "coverage-integration.out") {
-            $coverageContent = Get-Content "coverage.out"
+        if (Test-Path $testConfig.CoverageOutput -and Test-Path "coverage-integration.out") {
+            Write-InfoLog "カバレッジファイルをマージ中..."
+            $coverageContent = Get-Content $testConfig.CoverageOutput
             $integrationContent = Get-Content "coverage-integration.out" | Select-Object -Skip 1
-            $coverageContent + $integrationContent | Set-Content "coverage.out"
+            $coverageContent + $integrationContent | Set-Content $testConfig.CoverageOutput
             Remove-Item "coverage-integration.out"
         }
         
-        go tool cover -html=coverage.out -o coverage.html
-        Write-ColorOutput "カバレッジレポート: coverage.html" "Green"
+        # HTMLレポート生成
+        Write-InfoLog "HTMLレポート生成中..."
+        go tool cover -html=$testConfig.CoverageOutput -o $testConfig.CoverageHTML
+        
+        $totalDuration = (Get-Date) - $totalStartTime
+        Write-InfoLog "カバレッジレポート: $testConfig.CoverageHTML - 総実行時間: $($totalDuration.TotalSeconds.ToString('F2'))秒"
         exit 0
     }
     catch {
-        Write-ColorOutput "カバレッジテストエラー: $_" "Red"
+        Write-ErrorLog "カバレッジテストエラー: $($_.Exception.Message)"
         exit 1
     }
 }
 
 # クリーンアップ
 function Clean-Project {
-    Write-ColorOutput "クリーンアップ中..." "Yellow"
+    Write-InfoLog "クリーンアップ中..."
     
     $filesToRemove = @($BinaryName, "coverage.out", "coverage.html")
     foreach ($file in $filesToRemove) {
         if (Test-Path $file) {
             Remove-Item $file -Force
-            Write-ColorOutput "削除: $file" "Yellow"
+            Write-InfoLog "削除: $file"
         }
     }
     
     if (Test-Path $BuildDir) {
         Remove-Item $BuildDir -Recurse -Force
-        Write-ColorOutput "削除: $BuildDir" "Yellow"
+        Write-InfoLog "削除: $BuildDir"
     }
     
-    Write-ColorOutput "クリーンアップ完了" "Green"
+    Write-InfoLog "クリーンアップ完了"
 }
 
 # インストール
 function Install-Project {
-    Write-ColorOutput "インストール中..." "Green"
+    Write-InfoLog "インストール中..."
     
     if (-not (Test-Path $BinaryName)) {
-        Write-ColorOutput "エラー: ビルドファイルが見つかりません。先にビルドを実行してください。" "Red"
+        Write-ErrorLog "ビルドファイルが見つかりません。先にビルドを実行してください。"
         return
     }
     
-    $goPath = $env:GOPATH
-    if (-not $goPath) {
-        $goPath = "$env:USERPROFILE\go"
-    }
-    
+    $goPath = Get-EnvironmentVariable -Name "GOPATH" -DefaultValue "$env:USERPROFILE\go"
     $installPath = "$goPath\bin"
-    if (-not (Test-Path $installPath)) {
-        New-Item -ItemType Directory -Path $installPath -Force | Out-Null
-    }
+    
+    Test-DirectoryWithCreate -Path $installPath -CreateIfNotExists
     
     try {
         Copy-Item $BinaryName "$installPath\" -Force
-        Write-ColorOutput "インストール完了: $installPath\$BinaryName" "Green"
+        Write-InfoLog "インストール完了: $installPath\$BinaryName"
     }
     catch {
-        Write-ColorOutput "インストールエラー: $_" "Red"
+        Write-ErrorLog "インストールエラー: $($_.Exception.Message)"
     }
 }
 
@@ -366,6 +417,11 @@ function Show-Help {
 }
 
 # メイン処理
+Write-InfoLog "Gopier ビルドスクリプト開始"
+Write-InfoLog "アクション: $Action"
+Write-InfoLog "プラットフォーム: $Platform"
+Write-InfoLog "アーキテクチャ: $Architecture"
+
 switch ($Action.ToLower()) {
     "build" { Build-Project }
     "release" { Build-Release }
@@ -376,7 +432,7 @@ switch ($Action.ToLower()) {
     "install" { Install-Project }
     "help" { Show-Help }
     default { 
-        Write-ColorOutput "不明なアクション: $Action" "Red"
+        Write-ErrorLog "不明なアクション: $Action"
         Show-Help
     }
 } 

@@ -52,7 +52,7 @@ func CheckAdminForPermissions() error {
 
 // IsWindows returns true if running on Windows
 func IsWindows() bool {
-	return runtime.GOOS == "windows"
+	return false
 }
 
 // CanCopyPermissions returns true if permission copying is supported

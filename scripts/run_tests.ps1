@@ -10,27 +10,47 @@ param(
     [switch]$ShowLog
 )
 
+# 共通モジュールを読み込み
+$scriptPath = $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $scriptPath
+$projectRoot = Split-Path -Parent $scriptDir
+Import-Module (Join-Path $projectRoot "scripts\common\GopierCommon.psm1") -Force
+
+# プロジェクトルートに移動
+if (-not (Set-ProjectRoot)) {
+    Write-ErrorLog "プロジェクトルートディレクトリが見つかりません"
+    exit 1
+}
+
+# 設定を取得
+$testConfig = Get-TestConfig
+$logConfig = Get-LogConfig
+$adminConfig = Get-AdminConfig
+
+# ログ設定を適用
+Set-LogConfig -Level $logConfig.Level -EnableFileLog $logConfig.EnableFileLog -LogDirectory $logConfig.LogDirectory
+
 function Show-Help {
-    Write-Host "Gopier テスト実行スクリプト" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "使用方法:" -ForegroundColor Yellow
-    Write-Host "  .\scripts\run_tests.ps1 [オプション]" -ForegroundColor White
-    Write-Host ""
-    Write-Host "オプション:" -ForegroundColor Yellow
-    Write-Host "  -Admin        管理者権限が必要なテストのみ実行" -ForegroundColor White
-    Write-Host "  -Short        短時間テストのみ実行（管理者権限不要）" -ForegroundColor White
-    Write-Host "  -All          すべてのテストを実行" -ForegroundColor White
-    Write-Host "  -AutoConfirm  管理者権限テスト実行時の確認をスキップ" -ForegroundColor White
-    Write-Host "  -ShowLog      テスト実行後にログファイルを表示" -ForegroundColor White
-    Write-Host "  -Help         このヘルプを表示" -ForegroundColor White
-    Write-Host ""
-    Write-Host "例:" -ForegroundColor Yellow
-    Write-Host "  .\scripts\run_tests.ps1 -Short" -ForegroundColor White
-    Write-Host "  .\scripts\run_tests.ps1 -Admin" -ForegroundColor White
-    Write-Host "  .\scripts\run_tests.ps1 -Admin -AutoConfirm" -ForegroundColor White
-    Write-Host "  .\scripts\run_tests.ps1 -Admin -ShowLog" -ForegroundColor White
-    Write-Host "  .\scripts\run_tests.ps1 -All" -ForegroundColor White
-    Write-Host ""
+    Write-ColorOutput "Gopier テスト実行スクリプト" "Green"
+    Write-ColorOutput ""
+    Write-ColorOutput "使用方法:" "Yellow"
+    Write-ColorOutput "  .\scripts\run_tests.ps1 [オプション]" "White"
+    Write-ColorOutput ""
+    Write-ColorOutput "オプション:" "Yellow"
+    Write-ColorOutput "  -Admin        管理者権限が必要なテストのみ実行" "White"
+    Write-ColorOutput "  -Short        短時間テストのみ実行（管理者権限不要）" "White"
+    Write-ColorOutput "  -All          すべてのテストを実行" "White"
+    Write-ColorOutput "  -AutoConfirm  管理者権限テスト実行時の確認をスキップ" "White"
+    Write-ColorOutput "  -ShowLog      テスト実行後にログファイルを表示" "White"
+    Write-ColorOutput "  -Help         このヘルプを表示" "White"
+    Write-ColorOutput ""
+    Write-ColorOutput "例:" "Yellow"
+    Write-ColorOutput "  .\scripts\run_tests.ps1 -Short" "White"
+    Write-ColorOutput "  .\scripts\run_tests.ps1 -Admin" "White"
+    Write-ColorOutput "  .\scripts\run_tests.ps1 -Admin -AutoConfirm" "White"
+    Write-ColorOutput "  .\scripts\run_tests.ps1 -Admin -ShowLog" "White"
+    Write-ColorOutput "  .\scripts\run_tests.ps1 -All" "White"
+    Write-ColorOutput ""
 }
 
 function Test-AdminPrivileges {
@@ -39,26 +59,29 @@ function Test-AdminPrivileges {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Run-ShortTests {
-    Write-Host "短時間テストを実行中..." -ForegroundColor Green
-    Write-Host "（管理者権限不要なテストのみ）" -ForegroundColor Gray
+function Invoke-ShortTests {
+    Write-InfoLog "短時間テストを実行中..."
+    Write-InfoLog "（管理者権限不要なテストのみ）"
     
-    $env:TESTING = "1"
-    go test ./internal/permissions/... -short -v
+    $executionResult = Measure-ExecutionTime -ScriptBlock {
+        Set-EnvironmentVariable -Name "TESTING" -Value "1"
+        go test ./internal/permissions/... -short -v
+    } -Description "短時間テスト"
+    
     $result = $LASTEXITCODE
     
     if ($result -eq 0) {
-        Write-Host "短時間テストが成功しました" -ForegroundColor Green
+        Write-InfoLog "短時間テストが成功しました - $($executionResult.Duration.TotalSeconds.ToString('F2'))秒"
     } else {
-        Write-Host "短時間テストが失敗しました" -ForegroundColor Red
+        Write-ErrorLog "短時間テストが失敗しました - $($executionResult.Duration.TotalSeconds.ToString('F2'))秒"
     }
     
     return $result
 }
 
-function Run-AdminTests {
-    Write-Host "管理者権限テストを実行中..." -ForegroundColor Green
-    Write-Host "（管理者権限が必要なテストのみ）" -ForegroundColor Gray
+function Invoke-AdminTests {
+    Write-InfoLog "管理者権限テストを実行中..."
+    Write-InfoLog "（管理者権限が必要なテストのみ）"
     
     $adminArgs = "-Admin"
     if ($AutoConfirm) {
@@ -69,19 +92,19 @@ function Run-AdminTests {
     }
     
     if (-not (Test-AdminPrivileges)) {
-        Write-Host "管理者権限が必要です。UACダイアログが表示されます..." -ForegroundColor Yellow
-        Write-Host "管理者権限でPowerShellを起動してテストを実行します" -ForegroundColor Gray
+        Write-WarningLog "管理者権限が必要です。UACダイアログが表示されます..."
+        Write-InfoLog "管理者権限でPowerShellを起動してテストを実行します"
         
         $scriptPath = $MyInvocation.MyCommand.Path
         $projectRoot = Split-Path -Parent (Split-Path -Parent $scriptPath)
         
         # 現在の環境変数を取得
         $envVars = @{
-            "GOPATH" = $env:GOPATH
-            "GOROOT" = $env:GOROOT
-            "PATH" = $env:PATH
-            "GOOS" = $env:GOOS
-            "GOARCH" = $env:GOARCH
+            "GOPATH" = Get-EnvironmentVariable -Name "GOPATH"
+            "GOROOT" = Get-EnvironmentVariable -Name "GOROOT"
+            "PATH" = Get-EnvironmentVariable -Name "PATH"
+            "GOOS" = Get-EnvironmentVariable -Name "GOOS"
+            "GOARCH" = Get-EnvironmentVariable -Name "GOARCH"
         }
         
         # 環境変数を文字列として構築
@@ -99,40 +122,37 @@ function Run-AdminTests {
         )
         
         try {
-            Write-Host "管理者権限でPowerShellを起動中..." -ForegroundColor Gray
-            Write-Host "コマンド: $($arguments -join ' ')" -ForegroundColor Gray
+            Write-InfoLog "管理者権限でPowerShellを起動中..."
+            Write-DebugLog "コマンド: $($arguments -join ' ')"
             
-            $process = Start-Process powershell -ArgumentList $arguments -Verb RunAs -Wait -PassThru
+            $processResult = Invoke-ProcessWithResult -FilePath "powershell" -ArgumentList $arguments -TimeoutSeconds $testConfig.TimeoutSeconds
             
-            Write-Host "管理者権限プロセスの終了コード: $($process.ExitCode)" -ForegroundColor Gray
-            return $process.ExitCode
+            Write-DebugLog "管理者権限プロセスの終了コード: $($processResult.ExitCode)"
+            return $processResult.ExitCode
         } catch {
-            Write-Host "管理者権限でのテスト実行に失敗しました: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host "詳細: $($_.Exception)" -ForegroundColor Red
+            Write-ErrorLog "管理者権限でのテスト実行に失敗しました: $($_.Exception.Message)"
             return 1
         }
     }
     
     # 管理者権限で実行されている場合
-    Write-Host "管理者権限で実行中: $(Test-AdminPrivileges)" -ForegroundColor Green
-    Write-Host "現在のディレクトリ: $(Get-Location)" -ForegroundColor Gray
-    Write-Host "Go環境: $env:GOROOT" -ForegroundColor Gray
+    Write-InfoLog "管理者権限で実行中: $(Test-AdminPrivileges)"
+    Write-DebugLog "現在のディレクトリ: $(Get-Location)"
+    Write-DebugLog "Go環境: $(Get-EnvironmentVariable -Name 'GOROOT')"
     
     # Goコマンドの存在確認
-    if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
-        Write-Host "エラー: Goコマンドが見つかりません" -ForegroundColor Red
-        Write-Host "Goがインストールされているか、PATHに設定されているか確認してください" -ForegroundColor Yellow
+    if (-not (Test-GoCommand)) {
+        Write-ErrorLog "Goコマンドが見つかりません"
+        Write-InfoLog "Goがインストールされているか、PATHに設定されているか確認してください"
         return 1
     }
     
     # モジュールの依存関係を確認
-    Write-Host "モジュールの依存関係を確認中..." -ForegroundColor Gray
-    try {
+    Write-InfoLog "モジュールの依存関係を確認中..."
+    $moduleResult = Invoke-WithErrorHandling -ScriptBlock {
         go mod tidy
-        Write-Host "モジュールの依存関係を更新しました" -ForegroundColor Gray
-    } catch {
-        Write-Host "警告: モジュールの依存関係の更新に失敗しました: $($_.Exception.Message)" -ForegroundColor Yellow
-    }
+        Write-InfoLog "モジュールの依存関係を更新しました"
+    } -ErrorMessage "モジュールの依存関係の更新に失敗しました" -ContinueOnError $true
     
     # テストファイルの存在確認
     $testFiles = @(
@@ -142,17 +162,16 @@ function Run-AdminTests {
     
     foreach ($testFile in $testFiles) {
         if (-not (Test-Path $testFile)) {
-            Write-Host "警告: テストファイルが見つかりません: $testFile" -ForegroundColor Yellow
+            Write-WarningLog "テストファイルが見つかりません: $testFile"
         } else {
-            Write-Host "テストファイル確認: $testFile" -ForegroundColor Gray
+            Write-DebugLog "テストファイル確認: $testFile"
         }
     }
     
-    $env:TESTING = "1"
-    Write-Host "テスト実行中: go test ./internal/permissions/... -run 'WithAdmin' -v" -ForegroundColor Gray
+    Set-EnvironmentVariable -Name "TESTING" -Value "1"
+    Write-InfoLog "テスト実行中: go test ./internal/permissions/... -run 'WithAdmin' -v"
     
-    $startTime = Get-Date
-    try {
+    $executionResult = Measure-ExecutionTime -ScriptBlock {
         # テスト出力をログファイルにも記録
         $testOutput = go test ./internal/permissions/... -run "WithAdmin" -v 2>&1
         $result = $LASTEXITCODE
@@ -165,103 +184,100 @@ function Run-AdminTests {
 実行日時: $(Get-Date)
 管理者権限: $(Test-AdminPrivileges)
 現在のディレクトリ: $(Get-Location)
-Go環境: $env:GOROOT
+Go環境: $(Get-EnvironmentVariable -Name 'GOROOT')
 
 === テスト出力 ===
 $testOutput
 
 === 実行結果 ===
 終了コード: $result
-実行時間: $($duration.TotalSeconds.ToString('F2'))秒
+実行時間: $($executionResult.Duration.TotalSeconds.ToString('F2'))秒
 "@
         $logContent | Out-File -FilePath $logFile -Encoding UTF8
         
-    } catch {
-        Write-Host "テスト実行中にエラーが発生しました: $($_.Exception.Message)" -ForegroundColor Red
-        $result = 1
-        
-        # エラーもログファイルに記録
-        $errorContent = @"
-=== 管理者権限テスト実行エラー ===
-実行日時: $(Get-Date)
-エラー: $($_.Exception.Message)
-詳細: $($_.Exception)
-"@
-        $errorContent | Out-File -FilePath $logFile -Encoding UTF8
-    }
-    $endTime = Get-Date
-    $duration = $endTime - $startTime
+        return @{
+            ExitCode = $result
+            LogFile = $logFile
+            Output = $testOutput
+        }
+    } -Description "管理者権限テスト"
     
-    Write-Host "テスト実行時間: $($duration.TotalSeconds.ToString('F2'))秒" -ForegroundColor Gray
+    $result = $executionResult.Result.ExitCode
+    $logFile = $executionResult.Result.LogFile
+    
+    Write-InfoLog "テスト実行時間: $($executionResult.Duration.TotalSeconds.ToString('F2'))秒"
     
     if ($result -eq 0) {
-        Write-Host "管理者権限テストが成功しました" -ForegroundColor Green
-        Write-Host "✓ すべての管理者権限テストが正常に完了しました" -ForegroundColor Green
-        Write-Host "ログファイル: $logFile" -ForegroundColor Gray
+        Write-InfoLog "管理者権限テストが成功しました"
+        Write-InfoLog "✓ すべての管理者権限テストが正常に完了しました"
+        Write-InfoLog "ログファイル: $logFile"
     } else {
-        Write-Host "管理者権限テストが失敗しました（終了コード: $result）" -ForegroundColor Red
+        Write-ErrorLog "管理者権限テストが失敗しました（終了コード: $result）"
 
         # 失敗の原因を分析
         switch ($result) {
-            1 { Write-Host "原因: テストの実行に失敗しました" -ForegroundColor Yellow }
-            2 { Write-Host "原因: テストのコンパイルに失敗しました" -ForegroundColor Yellow }
-            default { Write-Host "原因: 不明なエラー（終了コード: $result）" -ForegroundColor Yellow }
+            1 { Write-WarningLog "原因: テストの実行に失敗しました" }
+            2 { Write-WarningLog "原因: テストのコンパイルに失敗しました" }
+            default { Write-WarningLog "原因: 不明なエラー（終了コード: $result）" }
         }
 
-        Write-Host "対処法:" -ForegroundColor Yellow
-        Write-Host "  1. 管理者権限で実行されているか確認してください" -ForegroundColor White
-        Write-Host "  2. Goの環境が正しく設定されているか確認してください" -ForegroundColor White
-        Write-Host "  3. テストファイルが存在するか確認してください" -ForegroundColor White
-        Write-Host "ログファイル: $logFile" -ForegroundColor Gray
+        Write-InfoLog "対処法:"
+        Write-InfoLog "  1. 管理者権限で実行されているか確認してください"
+        Write-InfoLog "  2. Goの環境が正しく設定されているか確認してください"
+        Write-InfoLog "  3. テストファイルが存在するか確認してください"
+        Write-InfoLog "ログファイル: $logFile"
     }
 
     # ログファイルを表示するオプション
     if ($ShowLog) {
         if (Test-Path $logFile) {
-            Write-Host "`n=== ログファイルの内容 ===" -ForegroundColor Cyan
+            Write-InfoLog "`n=== ログファイルの内容 ==="
             try {
                 $logContent = Get-Content $logFile -Encoding UTF8 -ErrorAction Stop
                 if ($logContent.Count -gt 0) {
                     foreach ($line in $logContent) {
                         if ($line -match "===.*===") {
-                            Write-Host $line -ForegroundColor Magenta
+                            Write-ColorOutput $line "Magenta"
                         } elseif ($line -match "PASS|成功") {
-                            Write-Host $line -ForegroundColor Green
+                            Write-ColorOutput $line "Green"
                         } elseif ($line -match "FAIL|失敗|エラー") {
-                            Write-Host $line -ForegroundColor Red
+                            Write-ColorOutput $line "Red"
                         } elseif ($line -match "WARNING|警告") {
-                            Write-Host $line -ForegroundColor Yellow
+                            Write-ColorOutput $line "Yellow"
                         } elseif ($line -match "DEBUG|デバッグ") {
-                            Write-Host $line -ForegroundColor Gray
+                            Write-ColorOutput $line "Gray"
                         } else {
                             Write-Host $line
                         }
                     }
                 } else {
-                    Write-Host "ログファイルは空です" -ForegroundColor Gray
+                    Write-InfoLog "ログファイルは空です"
                 }
             } catch {
-                Write-Host "ログファイルの読み込みに失敗しました: $($_.Exception.Message)" -ForegroundColor Red
+                Write-ErrorLog "ログファイルの読み込みに失敗しました: $($_.Exception.Message)"
             }
         } else {
-            Write-Host "警告: ログファイルが見つかりません: $logFile" -ForegroundColor Yellow
+            Write-WarningLog "ログファイルが見つかりません: $logFile"
         }
     }
     
     return $result
 }
 
-function Run-AllTests {
-    Write-Host "すべてのテストを実行中..." -ForegroundColor Green
+function Invoke-AllTests {
+    Write-InfoLog "すべてのテストを実行中..."
     
-    $env:TESTING = "1"
-    go test ./internal/permissions/... -v
+    $executionResult = Measure-ExecutionTime -ScriptBlock {
+        Set-EnvironmentVariable -Name "TESTING" -Value "1"
+        go test ./internal/permissions/... -v
+    } -Description "すべてのテスト"
+    
     $result = $LASTEXITCODE
     
     if ($result -eq 0) {
-        Write-Host "すべてのテストが成功しました" -ForegroundColor Green
+        Write-InfoLog "すべてのテストが成功しました - $($executionResult.Duration.TotalSeconds.ToString('F2'))秒"
     } else {
-        Write-Host "一部のテストが失敗しました" -ForegroundColor Red
+        Write-ErrorLog "一部のテストが失敗しました - $($executionResult.Duration.TotalSeconds.ToString('F2'))秒"
     }
     
     return $result
@@ -273,35 +289,26 @@ if ($Help) {
     exit 0
 }
 
-# プロジェクトルートディレクトリに移動
-$scriptPath = $MyInvocation.MyCommand.Path
-$projectRoot = Split-Path -Parent (Split-Path -Parent $scriptPath)
-
-if ($projectRoot -ne (Get-Location).Path) {
-    Write-Host "プロジェクトルートディレクトリに移動中: $projectRoot" -ForegroundColor Gray
-    Set-Location $projectRoot
-}
-
 # 現在のディレクトリを確認
 if (-not (Test-Path "go.mod")) {
-    Write-Host "エラー: go.modファイルが見つかりません" -ForegroundColor Red
-    Write-Host "プロジェクトのルートディレクトリで実行してください" -ForegroundColor Yellow
+    Write-ErrorLog "go.modファイルが見つかりません"
+    Write-InfoLog "プロジェクトのルートディレクトリで実行してください"
     exit 1
 }
 
 # オプションの確認
 if ($Admin -and $Short) {
-    Write-Host "エラー: -Adminと-Shortは同時に指定できません" -ForegroundColor Red
+    Write-ErrorLog "-Adminと-Shortは同時に指定できません"
     exit 1
 }
 
 if ($Admin -and $All) {
-    Write-Host "エラー: -Adminと-Allは同時に指定できません" -ForegroundColor Red
+    Write-ErrorLog "-Adminと-Allは同時に指定できません"
     exit 1
 }
 
 if ($Short -and $All) {
-    Write-Host "エラー: -Shortと-Allは同時に指定できません" -ForegroundColor Red
+    Write-ErrorLog "-Shortと-Allは同時に指定できません"
     exit 1
 }
 
@@ -310,15 +317,21 @@ if (-not $Admin -and -not $Short -and -not $All) {
     $Short = $true
 }
 
+Write-InfoLog "Gopier テスト実行スクリプト開始"
+Write-InfoLog "テストタイプ: $(if ($Short) { 'Short' } elseif ($Admin) { 'Admin' } else { 'All' })"
+Write-InfoLog "自動確認: $AutoConfirm"
+Write-InfoLog "ログ表示: $ShowLog"
+
 # テスト実行
 $exitCode = 0
 
 if ($Short) {
-    $exitCode = Run-ShortTests
+    $exitCode = Invoke-ShortTests
 } elseif ($Admin) {
-    $exitCode = Run-AdminTests
+    $exitCode = Invoke-AdminTests
 } elseif ($All) {
-    $exitCode = Run-AllTests
+    $exitCode = Invoke-AllTests
 }
 
+Write-InfoLog "テスト実行スクリプト終了 - 終了コード: $exitCode"
 exit $exitCode 
