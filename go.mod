@@ -1,8 +1,6 @@
 module github.com/sakuhanight/gopier
 
-go 1.23.0
-
-toolchain go1.23.10
+go 1.21
 
 require (
 	github.com/spf13/cobra v1.9.1

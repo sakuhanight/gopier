@@ -52,7 +52,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ matrix.go-version }}-
             ${{ runner.os }}-go-
@@ -129,7 +129,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ matrix.go-version }}-
             ${{ runner.os }}-go-
@@ -137,7 +137,7 @@ jobs:
       - name: Install dependencies
         run: |
           Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
-          # 依存関係を強制的にダウンロード
+          # Force download dependencies
           go mod download -x
           go mod verify
         shell: powershell
@@ -161,7 +161,7 @@ jobs:
           $env:GOMAXPROCS = "2"
           $env:CGO_ENABLED = "0"
           
-          # ビルドを試行
+          # Attempt build
           go build -v -o gopier.exe
           $buildExitCode = $LASTEXITCODE
           
@@ -176,9 +176,9 @@ jobs:
           }
           
           if (Test-Path "gopier.exe") {
-              Write-Host "✓ Build successful"
+              Write-Host "Build successful"
           } else {
-              Write-Host "✗ Build failed: gopier.exe not found"
+              Write-Host "Build failed: gopier.exe not found"
               exit 1
           }
         shell: powershell
@@ -273,7 +273,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-1.21-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-1.21-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-1.21-
             ${{ runner.os }}-go-
@@ -301,7 +301,7 @@ jobs:
         run: |
           Set-Location "${{ github.run_id }}-${{ github.job }}"
           Write-Host "Running admin privilege tests..."
-          # 管理者権限テストを強制実行するための環境変数を設定
+          # Set environment variables to force admin tests execution
           $env:FORCE_ADMIN_TESTS = "1"
           $env:RUN_ADMIN_TESTS = "true"
           Write-Host "Environment variables set for admin tests"
@@ -406,7 +406,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-1.21-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-1.21-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-1.21-
             ${{ runner.os }}-go-
