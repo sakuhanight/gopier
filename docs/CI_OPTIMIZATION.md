@@ -169,7 +169,7 @@ go test -v -bench=. -benchmem -timeout=15m ./package/...
 # 特定のパッケージのみテスト
 uses: ./.github/workflows/windows-optimization.yml
 with:
-  go-version: '1.21'
+  go-version: '1.23'
   test-packages: './internal/copier/...'
   timeout-minutes: 15
 ```
@@ -179,7 +179,7 @@ with:
 # ベンチマークテスト専用
 uses: ./.github/workflows/benchmark.yml
 with:
-  go-version: '1.21'
+  go-version: '1.23'
   platform: 'windows-latest'
   timeout-minutes: 35
 ```
@@ -189,7 +189,7 @@ with:
 # 大きなファイルテスト専用
 uses: ./.github/workflows/aws-runner.yml
 with:
-  go-version: '1.21'
+  go-version: '1.23'
   test-type: 'large-files'
   timeout-minutes: 60
 ```

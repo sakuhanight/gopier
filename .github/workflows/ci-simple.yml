@@ -21,15 +21,13 @@ env:
   GOMAXPROCS: 4
 
 jobs:
-  # Linux tests (Go 1.21 & 1.22)
+  # Linux tests (Go 1.21, 1.22 & 1.23)
   test-linux:
     strategy:
       matrix:
-        go-version: ['1.21', '1.22']
+        go-version: ['1.23']
         include:
-          - go-version: '1.21'
-            coverage-flag: 'unittests'
-          - go-version: '1.22'
+          - go-version: '1.23'
             coverage-flag: 'unittests'
     runs-on: [self-hosted, Linux]
     timeout-minutes: 25
@@ -83,15 +81,13 @@ jobs:
           flags: ${{ matrix.coverage-flag }}
           fail_ci_if_error: false
 
-  # Windows tests (Go 1.21 & 1.22)
+  # Windows tests (Go 1.21, 1.22 & 1.23)
   test-windows:
     strategy:
       matrix:
-        go-version: ['1.21', '1.22']
+        go-version: ['1.23']
         include:
-          - go-version: '1.21'
-            coverage-flag: 'unittests'
-          - go-version: '1.22'
+          - go-version: '1.23'
             coverage-flag: 'unittests'
     runs-on: [self-hosted, Windows]
     timeout-minutes: 35
@@ -257,7 +253,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.23'
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -265,9 +261,9 @@ jobs:
           path: |
             $env:GOCACHE
             $env:GOMODCACHE
-          key: ${{ runner.os }}-go-1.21-${{ hashFiles('go.mod', 'go.sum') }}
+          key: ${{ runner.os }}-go-1.23-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-1.21-
+            ${{ runner.os }}-go-1.23-
             ${{ runner.os }}-go-
         continue-on-error: true
 
@@ -325,7 +321,7 @@ jobs:
     strategy:
       matrix:
         platform: [Linux, Windows]
-        go-version: ['1.21']
+        go-version: ['1.23']
     runs-on: [self-hosted, Linux]
     timeout-minutes: 30
     if: github.ref == 'refs/heads/develop'
@@ -387,7 +383,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.23'
 
       - name: Cache Go modules
         uses: actions/cache@v4

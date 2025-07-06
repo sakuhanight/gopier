@@ -25,11 +25,9 @@ jobs:
   test-linux:
     strategy:
       matrix:
-        go-version: ['1.21', '1.22']
+        go-version: ['1.23']
         include:
-          - go-version: '1.21'
-            coverage-flag: 'unittests'
-          - go-version: '1.22'
+          - go-version: '1.23'
             coverage-flag: 'unittests'
     runs-on: [self-hosted, Linux]
     timeout-minutes: 25
@@ -92,11 +90,9 @@ jobs:
   test-windows:
     strategy:
       matrix:
-        go-version: ['1.21', '1.22']
+        go-version: ['1.23']
         include:
-          - go-version: '1.21'
-            coverage-flag: 'unittests'
-          - go-version: '1.22'
+          - go-version: '1.23'
             coverage-flag: 'unittests'
     runs-on: [self-hosted, Windows]
     timeout-minutes: 35

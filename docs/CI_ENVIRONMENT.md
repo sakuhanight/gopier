@@ -55,7 +55,7 @@ scripts/
 #### プラットフォーム対応
 - **Linux**: Ubuntu Latest
 - **Windows**: Windows Latest
-- **Go バージョン**: 1.21, 1.22
+- **Go バージョン**: 1.21, 1.22, 1.23
 
 #### テストタイプ
 1. **ユニットテスト**: `./cmd/... ./internal/...`

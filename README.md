@@ -1,6 +1,6 @@
 # Gopier
 
-[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.23+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](https://github.com/sakuhanight/gopier)
 [![CI](https://github.com/sakuhanight/gopier/workflows/CI/badge.svg)](https://github.com/sakuhanight/gopier/actions)
@@ -217,7 +217,7 @@ GitHub ActionsのワークフローでWindowsで管理者権限を使用する�
 test-windows-admin:
   uses: ./.github/workflows/windows-admin.yml
   with:
-    go-version: '1.21'
+    go-version: '1.23'
     timeout-minutes: 40
 ```
 
