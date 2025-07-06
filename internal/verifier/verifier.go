@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -78,6 +79,7 @@ type Verifier struct {
 	resultsMutex  sync.Mutex
 	errCount      int64
 	errCountMutex sync.Mutex
+	errorChan     chan error
 }
 
 // NewVerifier は新しいVerifierを作成する
@@ -104,6 +106,7 @@ func NewVerifier(sourceDir, destDir string, options Options, fileFilter *filter.
 		cancel:       cancel,
 		semaphore:    semaphore,
 		results:      make([]VerificationResult, 0),
+		errorChan:    make(chan error, 1000),
 	}
 }
 
@@ -146,6 +149,13 @@ func (v *Verifier) GetErrorCount() int64 {
 
 // addResult は検証結果を追加する
 func (v *Verifier) addResult(result VerificationResult) {
+	// キャンセル時は何もしない
+	select {
+	case <-v.ctx.Done():
+		return
+	default:
+	}
+
 	v.resultsMutex.Lock()
 	defer v.resultsMutex.Unlock()
 	v.results = append(v.results, result)
@@ -198,6 +208,11 @@ func (v *Verifier) Verify() error {
 		// ディレクトリの検証
 		err = v.verifyDirectory(v.sourceDir, v.destDir)
 
+		// タイムアウトやキャンセルエラーの場合は即return
+		if err != nil && (strings.Contains(err.Error(), "キャンセル") || strings.Contains(err.Error(), "タイムアウト")) {
+			return err
+		}
+
 		// 余分なファイルのチェック（IgnoreExtraがfalseの場合）
 		if err == nil && !v.options.IgnoreExtra {
 			err = v.checkExtraFiles(v.sourceDir, v.destDir)
@@ -206,10 +221,23 @@ func (v *Verifier) Verify() error {
 		// 単一ファイルの検証
 		destPath := filepath.Join(v.destDir, filepath.Base(v.sourceDir))
 		_, err = v.verifyFile(v.sourceDir, destPath)
+
+		// タイムアウトやキャンセルエラーの場合は即return
+		if err != nil && (strings.Contains(err.Error(), "キャンセル") || strings.Contains(err.Error(), "タイムアウト")) {
+			return err
+		}
 	}
 
 	// すべてのゴルーチンの完了を待つ
 	v.wg.Wait()
+
+	// errorChanをすべて確認
+	close(v.errorChan)
+	for cerr := range v.errorChan {
+		if strings.Contains(cerr.Error(), "キャンセル") || strings.Contains(cerr.Error(), "タイムアウト") {
+			return cerr
+		}
+	}
 
 	// チャンネルがまだ開いている場合のみ閉じる
 	select {
@@ -235,11 +263,14 @@ func (v *Verifier) Verify() error {
 	}
 
 	// エラーが発生したかどうかを返す
+	if err != nil {
+		return err
+	}
 	if v.GetErrorCount() > 0 {
 		return fmt.Errorf("%d 個のファイルで不一致が検出されました", v.GetErrorCount())
 	}
 
-	return err
+	return nil
 }
 
 // verifyDirectory はディレクトリを再帰的に検証する
@@ -273,6 +304,12 @@ func (v *Verifier) verifyDirectory(sourceDir, destDir string) error {
 
 	// 各エントリの処理
 	for _, entry := range entries {
+		// ループの最初でキャンセルを監視
+		select {
+		case <-v.ctx.Done():
+			return fmt.Errorf("検証処理がキャンセルされました")
+		default:
+		}
 		sourcePath := filepath.Join(sourceDir, entry.Name())
 		destPath := filepath.Join(destDir, entry.Name())
 
@@ -283,7 +320,12 @@ func (v *Verifier) verifyDirectory(sourceDir, destDir string) error {
 			}
 
 			// 再帰的に検証
-			if err := v.verifyDirectory(sourcePath, destPath); err != nil {
+			err := v.verifyDirectory(sourcePath, destPath)
+			if err != nil {
+				// タイムアウトやキャンセルの場合は即return
+				if strings.Contains(err.Error(), "キャンセル") || strings.Contains(err.Error(), "タイムアウト") {
+					return err
+				}
 				return err
 			}
 			continue
@@ -312,23 +354,43 @@ func (v *Verifier) verifyDirectory(sourceDir, destDir string) error {
 		v.wg.Add(1)
 		go func(src, dst string) {
 			defer v.wg.Done()
-
-			// セマフォの取得
-			v.semaphore <- struct{}{}
-			defer func() {
-				<-v.semaphore
-			}()
-
-			result, err := v.verifyFile(src, dst)
-			if err != nil {
-				fmt.Printf("ファイル検証エラー: %v\n", err)
+			// ゴルーチン内でもキャンセルを監視
+			select {
+			case <-v.ctx.Done():
+				return
+			default:
 			}
-
-			// 結果を追加
+			v.semaphore <- struct{}{}
+			defer func() { <-v.semaphore }()
+			result, ferr := v.verifyFile(src, dst)
+			if ferr != nil {
+				if strings.Contains(ferr.Error(), "キャンセル") || strings.Contains(ferr.Error(), "タイムアウト") {
+					v.errorChan <- ferr
+					return
+				}
+			}
 			if result != nil {
 				v.addResult(*result)
 			}
 		}(sourcePath, destPath)
+
+		// 同期的にファイルを検証（タイムアウトやキャンセルを即座に検出）
+		result, ferr := v.verifyFile(sourcePath, destPath)
+		if ferr != nil {
+			if strings.Contains(ferr.Error(), "キャンセル") || strings.Contains(ferr.Error(), "タイムアウト") {
+				return ferr
+			}
+		}
+		if result != nil {
+			v.addResult(*result)
+		}
+	}
+
+	// ここでコンテキストのキャンセルを監視
+	select {
+	case <-v.ctx.Done():
+		return fmt.Errorf("検証処理がキャンセルされました")
+	default:
 	}
 
 	return nil
@@ -433,7 +495,7 @@ func (v *Verifier) verifyFile(sourcePath, destPath string) (*VerificationResult,
 	}
 
 	// ソースファイルのハッシュを計算
-	sourceHash, err := v.hasher.HashFile(sourcePath)
+	sourceHash, err := v.hasher.HashFileWithContext(v.ctx, sourcePath)
 	if err != nil {
 		result.Error = fmt.Errorf("ソースファイルのハッシュ計算エラー: %w", err)
 
@@ -456,7 +518,7 @@ func (v *Verifier) verifyFile(sourcePath, destPath string) (*VerificationResult,
 	result.SourceHash = sourceHash
 
 	// 宛先ファイルのハッシュを計算
-	destHash, err := v.hasher.HashFile(destPath)
+	destHash, err := v.hasher.HashFileWithContext(v.ctx, destPath)
 	if err != nil {
 		result.Error = fmt.Errorf("宛先ファイルのハッシュ計算エラー: %w", err)
 

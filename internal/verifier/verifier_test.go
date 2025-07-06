@@ -1794,7 +1794,7 @@ func TestVerifier_SetTimeout(t *testing.T) {
 
 	// 大きなファイルを作成（検証に時間がかかるように）
 	largeFile := filepath.Join(sourceDir, "large.txt")
-	largeData := make([]byte, 10*1024*1024) // 10MB
+	largeData := make([]byte, 5*1024*1024*1024) // 5GB
 	for i := range largeData {
 		largeData[i] = byte(i % 256)
 	}
@@ -1802,11 +1802,11 @@ func TestVerifier_SetTimeout(t *testing.T) {
 	os.WriteFile(filepath.Join(destDir, "large.txt"), largeData, 0644)
 
 	options := DefaultOptions()
-	options.BufferSize = 1024 // 小さなバッファで時間をかける
+	options.BufferSize = 1 // 1バイトのバッファで時間をかける
 	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
 
-	// 短いタイムアウトを設定
-	timeout := 100 * time.Millisecond
+	// タイムアウトを1分に設定
+	timeout := 60 * time.Second
 	verifier.SetTimeout(timeout)
 
 	// タイムアウトが設定されていることを確認
@@ -1819,14 +1819,15 @@ func TestVerifier_SetTimeout(t *testing.T) {
 
 	// 検証を実行（タイムアウトで中断されるはず）
 	err := verifier.Verify()
+	fmt.Println("[DEBUG] verifier.Verify()の戻り値:", err)
 	if err == nil {
 		t.Error("タイムアウトが発生すべきです")
 		return
 	}
 
 	// タイムアウトエラーかキャンセルエラーであることを確認
-	if !strings.Contains(err.Error(), "タイムアウト") && !strings.Contains(err.Error(), "キャンセル") {
-		t.Errorf("期待されるエラーメッセージに'タイムアウト'または'キャンセル'が含まれていません: %v", err)
+	if !strings.Contains(err.Error(), "タイムアウト") && !strings.Contains(err.Error(), "キャンセル") && !strings.Contains(err.Error(), "ハッシュ計算がキャンセル") {
+		t.Errorf("期待されるエラーメッセージに'タイムアウト'、'キャンセル'、または'ハッシュ計算がキャンセル'が含まれていません: %v", err)
 	}
 }
 
