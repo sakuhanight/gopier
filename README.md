@@ -6,7 +6,7 @@
 [![CI](https://github.com/sakuhanight/gopier/workflows/CI/badge.svg)](https://github.com/sakuhanight/gopier/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/sakuhanight/gopier)](https://goreportcard.com/report/github.com/sakuhanight/gopier)
 [![codecov](https://codecov.io/gh/sakuhanight/gopier/graph/badge.svg?token=5M745GA7T3)](https://codecov.io/gh/sakuhanight/gopier)
-[![Coverage](https://img.shields.io/badge/coverage-72.6%25-green.svg)](https://github.com/sakuhanight/gopier)
+[![Coverage](https://img.shields.io/badge/coverage-72.7%25-green.svg)](https://github.com/sakuhanight/gopier)
 
 高性能・多機能なファイル同期CLIツール
 
