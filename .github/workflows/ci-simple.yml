@@ -21,7 +21,7 @@ env:
   GOMAXPROCS: 4
 
 jobs:
-  # Linux テスト（Go 1.21 & 1.22）
+  # Linux tests (Go 1.21 & 1.22)
   test-linux:
     strategy:
       matrix:
@@ -52,7 +52,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ matrix.go-version }}-
             ${{ runner.os }}-go-
@@ -83,7 +83,7 @@ jobs:
           flags: ${{ matrix.coverage-flag }}
           fail_ci_if_error: false
 
-  # Windows テスト（Go 1.21 & 1.22）
+  # Windows tests (Go 1.21 & 1.22)
   test-windows:
     strategy:
       matrix:
@@ -122,18 +122,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+            $env:GOCACHE
+            $env:GOMODCACHE
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ matrix.go-version }}-
             ${{ runner.os }}-go-
+        continue-on-error: true
 
       - name: Install dependencies
         run: |
           Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
-          # 依存関係を強制的にダウンロード
+          # Force download dependencies
+          Write-Host "Downloading Go modules..."
           go mod download -x
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "go mod download failed, trying without cache..."
+              $env:GOPROXY = "direct"
+              go mod download -x
+          }
+          Write-Host "Verifying Go modules..."
           go mod verify
         shell: powershell
 
@@ -156,7 +164,7 @@ jobs:
           $env:GOMAXPROCS = "2"
           $env:CGO_ENABLED = "0"
           
-          # ビルドを試行
+          # Try to build
           go build -v -o gopier.exe
           $buildExitCode = $LASTEXITCODE
           
@@ -223,7 +231,7 @@ jobs:
           }
         shell: powershell
 
-  # Windows管理者権限テスト
+  # Windows admin privilege tests
   test-windows-admin:
     runs-on: [self-hosted, Windows]
     timeout-minutes: 40
@@ -255,17 +263,24 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-1.21-${{ hashFiles('**/go.sum') }}
+            $env:GOCACHE
+            $env:GOMODCACHE
+          key: ${{ runner.os }}-go-1.21-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-1.21-
             ${{ runner.os }}-go-
+        continue-on-error: true
 
       - name: Install dependencies
         run: |
           Set-Location "${{ github.run_id }}-${{ github.job }}"
+          Write-Host "Downloading Go modules..."
           go mod download
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "go mod download failed, trying without cache..."
+              $env:GOPROXY = "direct"
+              go mod download
+          }
         shell: powershell
 
       - name: Setup test environment
@@ -285,7 +300,7 @@ jobs:
         run: |
           Set-Location "${{ github.run_id }}-${{ github.job }}"
           Write-Host "Running admin privilege tests..."
-          # 管理者権限テストを強制実行するための環境変数を設定
+          # Set environment variables to force admin tests execution
           $env:FORCE_ADMIN_TESTS = "1"
           $env:RUN_ADMIN_TESTS = "true"
           Write-Host "Environment variables set for admin tests"
@@ -305,7 +320,7 @@ jobs:
           }
         shell: powershell
 
-  # ベンチマークテスト
+  # Benchmark tests
   benchmark:
     strategy:
       matrix:
@@ -333,7 +348,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ matrix.go-version }}-
             ${{ runner.os }}-go-
@@ -355,7 +370,7 @@ jobs:
           echo "Running benchmarks on ${{ matrix.platform }}..."
           go test -v -bench=. -benchmem -timeout=20m ./internal/... ./cmd/... || exit 1
 
-  # ビルドジョブ
+  # Build job
   build:
     runs-on: [self-hosted, Linux]
     needs: [test-linux, test-windows, benchmark]
@@ -380,7 +395,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-1.21-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-1.21-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-1.21-
             ${{ runner.os }}-go-
