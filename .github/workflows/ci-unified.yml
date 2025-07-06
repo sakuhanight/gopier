@@ -50,8 +50,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
+            $env:GOCACHE
+            $env:GOMODCACHE
           key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ matrix.go-version }}-
@@ -127,9 +127,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('go.sum') }}
+            $env:GOCACHE
+            $env:GOMODCACHE
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ matrix.go-version }}-
             ${{ runner.os }}-go-
@@ -271,9 +271,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-1.21-${{ hashFiles('go.sum') }}
+            $env:GOCACHE
+            $env:GOMODCACHE
+          key: ${{ runner.os }}-go-1.21-${{ hashFiles('${{ github.run_id }}-${{ github.job }}/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-1.21-
             ${{ runner.os }}-go-
@@ -404,8 +404,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
+            $env:GOCACHE
+            $env:GOMODCACHE
           key: ${{ runner.os }}-go-1.21-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-1.21-
