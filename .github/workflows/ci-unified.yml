@@ -194,6 +194,24 @@ jobs:
           flags: ${{ matrix.coverage-flag }}
           fail_ci_if_error: false
 
+      - name: Cleanup after tests
+        run: |
+          Write-Host "Cleaning up test artifacts..."
+          $retry = 0
+          while ($retry -lt 3) {
+              try {
+                  if (Test-Path ".\internal\permissions") {
+                      Remove-Item -Path .\internal\permissions -Recurse -Force
+                  }
+                  break
+              } catch {
+                  Write-Host "Retrying cleanup... ($retry)"
+                  Start-Sleep -Seconds 2
+                  $retry++
+              }
+          }
+        shell: powershell
+
   # Windows管理者権限テスト
   test-windows-admin:
     runs-on: [self-hosted, Windows]
