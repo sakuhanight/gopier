@@ -230,6 +230,18 @@ jobs:
               Write-Host "Admin tests failed"
               exit $LASTEXITCODE
           }
+          # クリーンアップ処理
+          $retry = 0
+          while ($retry -lt 3) {
+              try {
+                  Remove-Item -Path .\internal\permissions -Recurse -Force
+                  break
+              } catch {
+                  Write-Host "Retrying cleanup... ($retry)"
+                  Start-Sleep -Seconds 2
+                  $retry++
+              }
+          }
         shell: powershell
 
   # ベンチマークテスト
