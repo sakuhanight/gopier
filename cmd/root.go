@@ -22,6 +22,7 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -66,6 +67,7 @@ var (
 	bufferSize          int
 	recursive           bool
 	preservePermissions bool
+	noConfirm           bool
 
 	// 同期モード関連
 	syncMode      string
@@ -102,6 +104,7 @@ type Config struct {
 	Verbose             bool `mapstructure:"verbose"`
 	SkipNewer           bool `mapstructure:"skip_newer"`
 	NoProgress          bool `mapstructure:"no_progress"`
+	NoConfirm           bool `mapstructure:"no_confirm"`
 	PreserveModTime     bool `mapstructure:"preserve_mod_time"`
 	PreservePermissions bool `mapstructure:"preserve_permissions"`
 	OverwriteExisting   bool `mapstructure:"overwrite_existing"`
@@ -164,6 +167,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.Flags().BoolVarP(&preservePermissions, "preserve-permissions", "p", false, "ファイルアクセス権限を保持（Windowsのみ）")
 	rootCmd.Flags().Bool("auto-elevate", false, "管理者権限が必要な場合に自動的にUACダイアログを表示（Windowsのみ）")
 	rootCmd.Flags().Bool("no-elevate", false, "管理者権限が必要な場合でもUACダイアログを表示しない（Windowsのみ）")
+	rootCmd.Flags().BoolVarP(&noConfirm, "no-confirm", "y", false, "確認を省略してコピーを実行")
 
 	// 同期モード関連のフラグ
 	rootCmd.Flags().StringVarP(&syncMode, "mode", "", "normal", "同期モード (initial:初期同期, incremental:追加同期)")
@@ -387,6 +391,13 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 		log.Info("ドライランモード: 実際のコピーは実行されません")
 		// ドライランでは実際のコピー処理をスキップ
 		return nil
+	}
+
+	// 確認を省略しない場合、ユーザーの確認を求める
+	if !noConfirm {
+		if err := askForConfirmation(sourceDir, destDir, &options, fileFilter, syncDB, syncMode); err != nil {
+			return err
+		}
 	}
 
 	// ファイルコピーの実行
@@ -679,6 +690,9 @@ func bindConfigToFlags(config *Config, cmd *cobra.Command) {
 	if !cmd.Flags().Changed("no-progress") && config.NoProgress {
 		noProgress = config.NoProgress
 	}
+	if !cmd.Flags().Changed("no-confirm") && config.NoConfirm {
+		noConfirm = config.NoConfirm
+	}
 	if !cmd.Flags().Changed("preserve-permissions") && config.PreservePermissions {
 		preservePermissions = config.PreservePermissions
 	}
@@ -736,6 +750,7 @@ func createDefaultConfig(configPath string) error {
 		Verbose:             false,
 		SkipNewer:           false,
 		NoProgress:          false,
+		NoConfirm:           false,
 		PreserveModTime:     true,
 		PreservePermissions: false,
 		OverwriteExisting:   true,
@@ -806,6 +821,7 @@ func showCurrentConfig() {
 		Verbose:             verbose,
 		SkipNewer:           skipNewer,
 		NoProgress:          noProgress,
+		NoConfirm:           noConfirm,
 		PreserveModTime:     true, // デフォルト値
 		PreservePermissions: preservePermissions,
 		OverwriteExisting:   !skipNewer,
@@ -1208,4 +1224,75 @@ func exportToJSON(files []database.FileInfo, outputPath string) error {
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(files)
+}
+
+// askForConfirmation はコピー開始前にユーザーの確認を求めます
+func askForConfirmation(sourceDir, destDir string, options *copier.Options, fileFilter *filter.Filter, syncDB *database.SyncDB, syncMode string) error {
+	fmt.Println("\n=== コピー設定の確認 ===")
+	fmt.Printf("コピー元: %s\n", sourceDir)
+	fmt.Printf("コピー先: %s\n", destDir)
+
+	// 基本オプションの表示
+	fmt.Println("\n【基本設定】")
+	fmt.Printf("  並列ワーカー数: %d\n", options.MaxConcurrent)
+	fmt.Printf("  バッファサイズ: %d MB\n", options.BufferSize/(1024*1024))
+	fmt.Printf("  リトライ回数: %d\n", options.MaxRetries)
+	fmt.Printf("  リトライ待機時間: %v\n", options.RetryDelay)
+	fmt.Printf("  再帰的コピー: %v\n", options.Recursive)
+	fmt.Printf("  権限保持: %v\n", options.PreservePermissions)
+	fmt.Printf("  上書き: %v\n", options.OverwriteExisting)
+
+	// フィルタ設定の表示
+	if fileFilter != nil {
+		fmt.Println("\n【フィルタ設定】")
+		if includePattern != "" {
+			fmt.Printf("  含めるパターン: %s\n", includePattern)
+		}
+		if excludePattern != "" {
+			fmt.Printf("  除外するパターン: %s\n", excludePattern)
+		}
+	}
+
+	// 同期モードの表示
+	if syncDB != nil {
+		fmt.Println("\n【同期設定】")
+		fmt.Printf("  同期モード: %s\n", syncMode)
+		fmt.Printf("  同期DB: %s\n", syncDBPath)
+		fmt.Printf("  失敗ファイルを含める: %v\n", includeFailed)
+		fmt.Printf("  最大失敗回数: %d\n", maxFailCount)
+	}
+
+	// 検証設定の表示
+	if verifyOnly || verifyChanged || verifyAll {
+		fmt.Println("\n【検証設定】")
+		if verifyOnly {
+			fmt.Println("  検証のみ実行")
+		} else if verifyChanged {
+			fmt.Println("  変更ファイルのハッシュ検証")
+		} else if verifyAll {
+			fmt.Println("  全ファイルのハッシュ検証")
+		}
+	}
+
+	// その他のオプション
+	fmt.Println("\n【その他の設定】")
+	fmt.Printf("  詳細ログ: %v\n", verbose)
+	fmt.Printf("  進捗表示: %v\n", !noProgress)
+	fmt.Printf("  ドライラン: %v\n", dryRun)
+
+	fmt.Print("\n上記の設定でコピーを開始しますか？ (y/N): ")
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("ユーザー入力の読み取りエラー: %w", err)
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response != "y" && response != "yes" {
+		return fmt.Errorf("コピーがキャンセルされました")
+	}
+
+	fmt.Println("コピーを開始します...")
+	return nil
 }

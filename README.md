@@ -149,6 +149,7 @@ verify_hash: true
 - `-n, --dry-run`: ドライラン
 - `-v, --verbose`: 詳細ログ
 - `-p, --preserve-permissions`: ファイルアクセス権限を保持（Windowsのみ）
+- `-y, --no-confirm`: 確認を省略してコピーを実行
 - `--auto-elevate`: 管理者権限が必要な場合に自動的にUACダイアログを表示（Windowsのみ）
 - `--no-elevate`: 管理者権限が必要な場合でもUACダイアログを表示しない（Windowsのみ）
 - `--verify-only`: コピーせず検証のみ
@@ -169,6 +170,10 @@ verify_hash: true
 - 詳細ログ:
   ```sh
   ./gopier -s ./src -d ./dst --verbose
+  ```
+- 確認を省略してコピー:
+  ```sh
+  ./gopier -s ./src -d ./dst -y
   ```
 
 ### Windows固有機能
@@ -509,6 +514,7 @@ AWSランナーでは以下のテストを実行します：
 - ワーカー数（`--workers`）やバッファサイズ（`--buffer`）を調整可能
 - 大量ファイル・大容量データも高速に同期
 - 進捗表示（`--no-progress`で非表示化も可）
+- コピー前確認（`--no-confirm`または`-y`で確認を省略）
 
 ---
 
