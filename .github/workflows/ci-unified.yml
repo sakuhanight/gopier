@@ -100,15 +100,21 @@ jobs:
             coverage-flag: 'unittests'
     runs-on: [self-hosted, Windows]
     timeout-minutes: 35
-    # 同時実行を避けるための設定
-    concurrency:
-      group: windows-tests
-      cancel-in-progress: true
 
     steps:
+      - name: Create unique working directory
+        run: |
+          $jobId = "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
+          $uniqueDir = "work-$jobId"
+          New-Item -ItemType Directory -Force -Path $uniqueDir
+          Set-Location $uniqueDir
+          Write-Host "Working in unique directory: $uniqueDir"
+        shell: powershell
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          path: ${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -129,15 +135,20 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Install dependencies
-        run: go mod download
+        run: |
+          Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
+          go mod download
+        shell: powershell
 
       - name: Setup test environment
         run: |
+          Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
           New-Item -ItemType Directory -Force -Path test_output, test_data, coverage_reports
         shell: powershell
 
       - name: Build for testing
         run: |
+          Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
           Write-Host "Building for testing..."
           $env:GOGC = "200"
           $env:GOMEMLIMIT = "256MiB"
@@ -157,6 +168,7 @@ jobs:
 
       - name: Run unit tests
         run: |
+          Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
           Write-Host "Running unit tests for Go ${{ matrix.go-version }} on Windows..."
           
           $env:GOGC = "200"
@@ -172,6 +184,7 @@ jobs:
 
       - name: Run integration tests
         run: |
+          Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
           Write-Host "Running integration tests..."
           go test -v -timeout=10m -parallel=1 ./tests/...
           if ($LASTEXITCODE -ne 0) {
@@ -182,6 +195,7 @@ jobs:
 
       - name: Run benchmarks
         run: |
+          Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
           Write-Host "Running benchmarks..."
           go test -v -bench=. -benchmem -timeout=15m ./internal/... ./cmd/...
           if ($LASTEXITCODE -ne 0) {
@@ -194,25 +208,16 @@ jobs:
         if: github.ref == 'refs/heads/develop'
         uses: codecov/codecov-action@v4
         with:
-          file: ./coverage.out
+          file: ${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}/coverage.out
           flags: ${{ matrix.coverage-flag }}
           fail_ci_if_error: false
 
-      - name: Cleanup after tests
+      - name: Cleanup unique directory
         run: |
-          Write-Host "Cleaning up test artifacts..."
-          $retry = 0
-          while ($retry -lt 3) {
-              try {
-                  if (Test-Path ".\internal\permissions") {
-                      Remove-Item -Path .\internal\permissions -Recurse -Force
-                  }
-                  break
-              } catch {
-                  Write-Host "Retrying cleanup... ($retry)"
-                  Start-Sleep -Seconds 2
-                  $retry++
-              }
+          $jobId = "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
+          $uniqueDir = "work-$jobId"
+          if (Test-Path $uniqueDir) {
+              Remove-Item -Path $uniqueDir -Recurse -Force
           }
         shell: powershell
 
@@ -221,15 +226,21 @@ jobs:
     runs-on: [self-hosted, Windows]
     timeout-minutes: 40
     if: github.ref == 'refs/heads/develop'
-    # 同時実行を避けるための設定
-    concurrency:
-      group: windows-tests
-      cancel-in-progress: true
 
     steps:
+      - name: Create unique working directory
+        run: |
+          $jobId = "${{ github.run_id }}-${{ github.job }}"
+          $uniqueDir = "work-$jobId"
+          New-Item -ItemType Directory -Force -Path $uniqueDir
+          Set-Location $uniqueDir
+          Write-Host "Working in unique directory: $uniqueDir"
+        shell: powershell
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          path: ${{ github.run_id }}-${{ github.job }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -250,38 +261,41 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Install dependencies
-        run: go mod download
+        run: |
+          Set-Location "${{ github.run_id }}-${{ github.job }}"
+          go mod download
+        shell: powershell
 
       - name: Setup test environment
         run: |
+          Set-Location "${{ github.run_id }}-${{ github.job }}"
           New-Item -ItemType Directory -Force -Path test_output, test_data
         shell: powershell
 
       - name: Build for admin testing
         run: |
+          Set-Location "${{ github.run_id }}-${{ github.job }}"
           Write-Host "Building for admin testing..."
           go build -o gopier.exe
         shell: powershell
 
       - name: Run admin privilege tests
         run: |
+          Set-Location "${{ github.run_id }}-${{ github.job }}"
           Write-Host "Running admin privilege tests..."
           go test -v -timeout=15m -run "WithAdmin" ./internal/permissions/...
           if ($LASTEXITCODE -ne 0) {
               Write-Host "Admin tests failed"
               exit $LASTEXITCODE
           }
-          # クリーンアップ処理
-          $retry = 0
-          while ($retry -lt 3) {
-              try {
-                  Remove-Item -Path .\internal\permissions -Recurse -Force
-                  break
-              } catch {
-                  Write-Host "Retrying cleanup... ($retry)"
-                  Start-Sleep -Seconds 2
-                  $retry++
-              }
+        shell: powershell
+
+      - name: Cleanup unique directory
+        run: |
+          $jobId = "${{ github.run_id }}-${{ github.job }}"
+          $uniqueDir = "work-$jobId"
+          if (Test-Path $uniqueDir) {
+              Remove-Item -Path $uniqueDir -Recurse -Force
           }
         shell: powershell
 
