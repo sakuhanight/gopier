@@ -100,6 +100,10 @@ jobs:
             coverage-flag: 'unittests'
     runs-on: [self-hosted, Windows]
     timeout-minutes: 35
+    # 同時実行を避けるための設定
+    concurrency:
+      group: windows-tests
+      cancel-in-progress: true
 
     steps:
       - name: Checkout code
@@ -217,6 +221,10 @@ jobs:
     runs-on: [self-hosted, Windows]
     timeout-minutes: 40
     if: github.ref == 'refs/heads/develop'
+    # 同時実行を避けるための設定
+    concurrency:
+      group: windows-tests
+      cancel-in-progress: true
 
     steps:
       - name: Checkout code
