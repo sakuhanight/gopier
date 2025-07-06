@@ -267,6 +267,10 @@ jobs:
         run: |
           Set-Location "${{ github.run_id }}-${{ github.job }}"
           Write-Host "Running admin privilege tests..."
+          # 管理者権限テストを強制実行するための環境変数を設定
+          $env:FORCE_ADMIN_TESTS = "1"
+          $env:RUN_ADMIN_TESTS = "true"
+          Write-Host "Environment variables set for admin tests"
           go test -v -timeout=15m -run "WithAdmin" ./internal/permissions/...
           if ($LASTEXITCODE -ne 0) {
               Write-Host "Admin tests failed"

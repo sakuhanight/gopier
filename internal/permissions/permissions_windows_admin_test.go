@@ -13,8 +13,8 @@ import (
 // これらのテストは管理者権限で実行する必要があります
 
 func TestCopyFilePermissionsWithAdmin(t *testing.T) {
-	// 管理者権限チェック
-	if !IsAdmin() {
+	// 管理者権限チェック（CI環境では環境変数で強制実行）
+	if !IsAdmin() && os.Getenv("FORCE_ADMIN_TESTS") != "1" {
 		t.Skip("管理者権限が必要なテストのため、管理者として実行してください")
 	}
 
@@ -51,8 +51,8 @@ func TestCopyFilePermissionsWithAdmin(t *testing.T) {
 }
 
 func TestCopyDirectoryPermissionsWithAdmin(t *testing.T) {
-	// 管理者権限チェック
-	if !IsAdmin() {
+	// 管理者権限チェック（CI環境では環境変数で強制実行）
+	if !IsAdmin() && os.Getenv("FORCE_ADMIN_TESTS") != "1" {
 		t.Skip("管理者権限が必要なテストのため、管理者として実行してください")
 	}
 
@@ -86,8 +86,8 @@ func TestCopyDirectoryPermissionsWithAdmin(t *testing.T) {
 }
 
 func TestCopyDirectoryTreePermissionsWithAdmin(t *testing.T) {
-	// 管理者権限チェック
-	if !IsAdmin() {
+	// 管理者権限チェック（CI環境では環境変数で強制実行）
+	if !IsAdmin() && os.Getenv("FORCE_ADMIN_TESTS") != "1" {
 		t.Skip("管理者権限が必要なテストのため、管理者として実行してください")
 	}
 
@@ -144,8 +144,8 @@ func TestCopyDirectoryTreePermissionsWithAdmin(t *testing.T) {
 }
 
 func TestCopyDirectoryTreePermissionsWithProgressWithAdmin(t *testing.T) {
-	// 管理者権限チェック
-	if !IsAdmin() {
+	// 管理者権限チェック（CI環境では環境変数で強制実行）
+	if !IsAdmin() && os.Getenv("FORCE_ADMIN_TESTS") != "1" {
 		t.Skip("管理者権限が必要なテストのため、管理者として実行してください")
 	}
 
@@ -216,8 +216,8 @@ func TestCopyDirectoryTreePermissionsWithProgressWithAdmin(t *testing.T) {
 }
 
 func TestUACElevationWithAdmin(t *testing.T) {
-	// 管理者権限チェック
-	if !IsAdmin() {
+	// 管理者権限チェック（CI環境では環境変数で強制実行）
+	if !IsAdmin() && os.Getenv("FORCE_ADMIN_TESTS") != "1" {
 		t.Skip("管理者権限が必要なテストのため、管理者として実行してください")
 	}
 
@@ -250,8 +250,8 @@ func TestUACElevationWithAdmin(t *testing.T) {
 }
 
 func TestIntegrationWithAdmin(t *testing.T) {
-	// 管理者権限チェック
-	if !IsAdmin() {
+	// 管理者権限チェック（CI環境では環境変数で強制実行）
+	if !IsAdmin() && os.Getenv("FORCE_ADMIN_TESTS") != "1" {
 		t.Skip("管理者権限が必要なテストのため、管理者として実行してください")
 	}
 
@@ -315,8 +315,8 @@ func TestIntegrationWithAdmin(t *testing.T) {
 }
 
 func TestAdminPrivilegesWithAdmin(t *testing.T) {
-	// 管理者権限チェック
-	if !IsAdmin() {
+	// 管理者権限チェック（CI環境では環境変数で強制実行）
+	if !IsAdmin() && os.Getenv("FORCE_ADMIN_TESTS") != "1" {
 		t.Skip("管理者権限が必要なテストのため、管理者として実行してください")
 	}
 
