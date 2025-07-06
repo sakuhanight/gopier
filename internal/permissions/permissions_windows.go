@@ -8,8 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"unsafe"
+
+	"errors"
 
 	"golang.org/x/sys/windows"
 )
@@ -61,6 +64,8 @@ type SecurityDescriptor struct {
 	Dacl     *ACL
 }
 
+var ErrDACLOnlyCopied = errors.New("DACL_ONLY_COPIED")
+
 // getWindowsErrorDescription returns a detailed description of Windows API errors
 func getWindowsErrorDescription(err error) string {
 	if err == nil {
@@ -104,6 +109,37 @@ func CopyFilePermissions(sourcePath, destPath string) error {
 		return fmt.Errorf("宛先ファイルが存在しません: %s (エラー: %v)", destPath, err)
 	}
 
+	// まず完全な権限コピーを試行
+	err := copyFilePermissionsWithOwner(sourcePath, destPath)
+	if err != nil {
+		// 所有者情報のコピーでエラーが発生した場合、DACLのみをコピー
+		if strings.Contains(err.Error(), "This security ID may not be assigned as the owner") {
+			fmt.Printf("DEBUG: Owner copy failed, attempting DACL-only copy: %s -> %s\n", sourcePath, destPath)
+			daclErr := copyFilePermissionsDACLOnly(sourcePath, destPath)
+			// DACLのみコピーが成功した場合はErrDACLOnlyCopiedを返す
+			if daclErr == nil {
+				return ErrDACLOnlyCopied
+			}
+			return daclErr
+		}
+		// アクセス拒否エラーの場合もDACLのみのコピーを試行
+		if strings.Contains(err.Error(), "アクセス拒否") {
+			fmt.Printf("DEBUG: Access denied, attempting DACL-only copy: %s -> %s\n", sourcePath, destPath)
+			daclErr := copyFilePermissionsDACLOnly(sourcePath, destPath)
+			// DACLのみコピーが成功した場合はErrDACLOnlyCopiedを返す
+			if daclErr == nil {
+				return ErrDACLOnlyCopied
+			}
+			return daclErr
+		}
+		return err
+	}
+
+	return nil
+}
+
+// copyFilePermissionsWithOwner copies file permissions including owner information
+func copyFilePermissionsWithOwner(sourcePath, destPath string) error {
 	// ソースファイルのセキュリティ記述子を取得
 	sourceSD, err := getFileSecurity(sourcePath)
 	if err != nil {
@@ -119,6 +155,130 @@ func CopyFilePermissions(sourcePath, destPath string) error {
 	}
 
 	fmt.Printf("DEBUG: Successfully set security descriptor for %s\n", destPath)
+	return nil
+}
+
+// copyFilePermissionsDACLOnly copies only DACL (access control list) without owner information
+func copyFilePermissionsDACLOnly(sourcePath, destPath string) error {
+	fmt.Printf("DEBUG: copyFilePermissionsDACLOnly called: %s -> %s\n", sourcePath, destPath)
+
+	// ファイルパスをUTF16に変換
+	sourcePathPtr, pathErr := windows.UTF16PtrFromString(sourcePath)
+	if pathErr != nil {
+		return fmt.Errorf("ソースファイルパスの変換に失敗: %s (エラー: %v)", sourcePath, pathErr)
+	}
+
+	destPathPtr, pathErr := windows.UTF16PtrFromString(destPath)
+	if pathErr != nil {
+		return fmt.Errorf("宛先ファイルパスの変換に失敗: %s (エラー: %v)", destPath, pathErr)
+	}
+
+	// 最初に必要なサイズを取得（DACLのみ）
+	var sizeNeeded uint32
+	ret, _, callErr := procGetFileSecurityW.Call(
+		uintptr(unsafe.Pointer(sourcePathPtr)),
+		uintptr(DACL_SECURITY_INFORMATION),
+		0,
+		0,
+		uintptr(unsafe.Pointer(&sizeNeeded)),
+	)
+
+	fmt.Printf("DEBUG: GetFileSecurityW DACL first call: ret=%d, sizeNeeded=%d, callErr=%v\n", ret, sizeNeeded, callErr)
+
+	// ERROR_INSUFFICIENT_BUFFERの場合は正常な動作
+	if ret == 0 {
+		if callErr != nil && callErr.Error() == "The data area passed to a system call is too small." {
+			fmt.Printf("DEBUG: ERROR_INSUFFICIENT_BUFFER detected, continuing...\n")
+			// これは正常な動作なので続行
+		} else {
+			// GetLastError()を即座に呼び出してエラー情報を保持
+			err := syscall.GetLastError()
+			errDesc := getWindowsErrorDescription(err)
+			fmt.Printf("DEBUG: GetFileSecurityW DACL failed with error: %v (%s)\n", err, errDesc)
+
+			// エラーがnilの場合は、callErrから情報を取得
+			if err == nil && callErr != nil {
+				err = callErr
+				errDesc = getWindowsErrorDescription(err)
+				fmt.Printf("DEBUG: Using callErr as fallback: %v (%s)\n", err, errDesc)
+			}
+
+			return fmt.Errorf("ソースファイルのDACL情報を取得できません: %s (エラー: %v, 詳細: %s)", sourcePath, err, errDesc)
+		}
+	}
+
+	// サイズが0の場合はエラー
+	if sizeNeeded == 0 {
+		return fmt.Errorf("DACLのサイズが0です: %s", sourcePath)
+	}
+
+	fmt.Printf("DEBUG: Allocating DACL buffer of size %d for %s\n", sizeNeeded, sourcePath)
+
+	// 適切なサイズのバッファを確保
+	buffer := make([]byte, sizeNeeded)
+	ret, _, err := procGetFileSecurityW.Call(
+		uintptr(unsafe.Pointer(sourcePathPtr)),
+		uintptr(DACL_SECURITY_INFORMATION),
+		uintptr(unsafe.Pointer(&buffer[0])),
+		uintptr(sizeNeeded),
+		uintptr(unsafe.Pointer(&sizeNeeded)),
+	)
+
+	fmt.Printf("DEBUG: GetFileSecurityW DACL second call: ret=%d, err=%v\n", ret, err)
+
+	if ret == 0 {
+		// GetLastError()を即座に呼び出してエラー情報を保持
+		lastErr := syscall.GetLastError()
+		errDesc := getWindowsErrorDescription(lastErr)
+		fmt.Printf("DEBUG: GetFileSecurityW DACL second call failed with last error: %v (%s)\n", lastErr, errDesc)
+
+		// エラーがnilの場合は、errから情報を取得
+		if lastErr == nil && err != nil {
+			lastErr = err
+			errDesc = getWindowsErrorDescription(lastErr)
+			fmt.Printf("DEBUG: Using err as fallback: %v (%s)\n", lastErr, errDesc)
+		}
+
+		return fmt.Errorf("ソースファイルのDACL情報を取得できません: %s (エラー: %v, 詳細: %s)", sourcePath, lastErr, errDesc)
+	}
+
+	// セキュリティ記述子を解析
+	sourceSD := (*SecurityDescriptor)(unsafe.Pointer(&buffer[0]))
+	fmt.Printf("DEBUG: Successfully parsed source DACL for %s\n", sourcePath)
+
+	// DACLのみを宛先に設定
+	ret, _, callErr = procSetFileSecurityW.Call(
+		uintptr(unsafe.Pointer(destPathPtr)),
+		uintptr(DACL_SECURITY_INFORMATION),
+		uintptr(unsafe.Pointer(sourceSD)),
+	)
+
+	fmt.Printf("DEBUG: SetFileSecurityW DACL call: ret=%d, callErr=%v\n", ret, callErr)
+
+	if ret == 0 {
+		// GetLastError()を即座に呼び出してエラー情報を保持
+		lastErr := syscall.GetLastError()
+		errDesc := getWindowsErrorDescription(lastErr)
+		fmt.Printf("DEBUG: SetFileSecurityW DACL failed with last error: %v (%s)\n", lastErr, errDesc)
+
+		// エラーがnilの場合は、callErrから情報を取得
+		if lastErr == nil && callErr != nil {
+			lastErr = callErr
+			errDesc = getWindowsErrorDescription(lastErr)
+			fmt.Printf("DEBUG: Using callErr as fallback: %v (%s)\n", lastErr, errDesc)
+		}
+
+		// 詳細なエラー情報を提供
+		if lastErr == windows.ERROR_ACCESS_DENIED {
+			return fmt.Errorf("宛先ファイルのDACL設定に失敗（アクセス拒否）: %s (エラー: %v, 詳細: %s)", destPath, lastErr, errDesc)
+		} else if lastErr == windows.ERROR_PRIVILEGE_NOT_HELD {
+			return fmt.Errorf("宛先ファイルのDACL設定に失敗（特権不足）: %s (エラー: %v, 詳細: %s)", destPath, lastErr, errDesc)
+		} else {
+			return fmt.Errorf("宛先ファイルのDACL設定に失敗: %s (エラー: %v, 詳細: %s)", destPath, lastErr, errDesc)
+		}
+	}
+
+	fmt.Printf("DEBUG: Successfully set DACL for %s\n", destPath)
 	return nil
 }
 
@@ -150,9 +310,18 @@ func getFileSecurity(filePath string) (*SecurityDescriptor, error) {
 			fmt.Printf("DEBUG: ERROR_INSUFFICIENT_BUFFER detected, continuing...\n")
 			// これは正常な動作なので続行
 		} else {
+			// GetLastError()を即座に呼び出してエラー情報を保持
 			err := syscall.GetLastError()
 			errDesc := getWindowsErrorDescription(err)
 			fmt.Printf("DEBUG: GetFileSecurityW failed with error: %v (%s)\n", err, errDesc)
+
+			// エラーがnilの場合は、callErrから情報を取得
+			if err == nil && callErr != nil {
+				err = callErr
+				errDesc = getWindowsErrorDescription(err)
+				fmt.Printf("DEBUG: Using callErr as fallback: %v (%s)\n", err, errDesc)
+			}
+
 			return nil, fmt.Errorf("ファイルのセキュリティ情報を取得できません: %s (エラー: %v, 詳細: %s)", filePath, err, errDesc)
 		}
 	}
@@ -177,9 +346,18 @@ func getFileSecurity(filePath string) (*SecurityDescriptor, error) {
 	fmt.Printf("DEBUG: GetFileSecurityW second call: ret=%d, err=%v\n", ret, err)
 
 	if ret == 0 {
+		// GetLastError()を即座に呼び出してエラー情報を保持
 		lastErr := syscall.GetLastError()
 		errDesc := getWindowsErrorDescription(lastErr)
 		fmt.Printf("DEBUG: GetFileSecurityW second call failed with last error: %v (%s)\n", lastErr, errDesc)
+
+		// エラーがnilの場合は、errから情報を取得
+		if lastErr == nil && err != nil {
+			lastErr = err
+			errDesc = getWindowsErrorDescription(lastErr)
+			fmt.Printf("DEBUG: Using err as fallback: %v (%s)\n", lastErr, errDesc)
+		}
+
 		return nil, fmt.Errorf("ファイルのセキュリティ情報を取得できません: %s (エラー: %v, 詳細: %s)", filePath, lastErr, errDesc)
 	}
 
@@ -213,9 +391,17 @@ func setFileSecurity(filePath string, sd *SecurityDescriptor) error {
 	fmt.Printf("DEBUG: SetFileSecurityW call: ret=%d, callErr=%v\n", ret, callErr)
 
 	if ret == 0 {
+		// GetLastError()を即座に呼び出してエラー情報を保持
 		lastErr := syscall.GetLastError()
 		errDesc := getWindowsErrorDescription(lastErr)
 		fmt.Printf("DEBUG: SetFileSecurityW failed with last error: %v (%s)\n", lastErr, errDesc)
+
+		// エラーがnilの場合は、callErrから情報を取得
+		if lastErr == nil && callErr != nil {
+			lastErr = callErr
+			errDesc = getWindowsErrorDescription(lastErr)
+			fmt.Printf("DEBUG: Using callErr as fallback: %v (%s)\n", lastErr, errDesc)
+		}
 
 		// 詳細なエラー情報を提供
 		if lastErr == windows.ERROR_ACCESS_DENIED {
@@ -252,6 +438,37 @@ func CopyDirectoryPermissions(sourcePath, destPath string) error {
 		return fmt.Errorf("宛先ディレクトリが存在しません: %s (エラー: %v)", destPath, err)
 	}
 
+	// まず完全な権限コピーを試行
+	err := copyDirectoryPermissionsWithOwner(sourcePath, destPath)
+	if err != nil {
+		// 所有者情報のコピーでエラーが発生した場合、DACLのみをコピー
+		if strings.Contains(err.Error(), "This security ID may not be assigned as the owner") {
+			fmt.Printf("DEBUG: Owner copy failed, attempting DACL-only copy: %s -> %s\n", sourcePath, destPath)
+			daclErr := copyDirectoryPermissionsDACLOnly(sourcePath, destPath)
+			// DACLのみコピーが成功した場合はErrDACLOnlyCopiedを返す
+			if daclErr == nil {
+				return ErrDACLOnlyCopied
+			}
+			return daclErr
+		}
+		// アクセス拒否エラーの場合もDACLのみのコピーを試行
+		if strings.Contains(err.Error(), "アクセス拒否") {
+			fmt.Printf("DEBUG: Access denied, attempting DACL-only copy: %s -> %s\n", sourcePath, destPath)
+			daclErr := copyDirectoryPermissionsDACLOnly(sourcePath, destPath)
+			// DACLのみコピーが成功した場合はErrDACLOnlyCopiedを返す
+			if daclErr == nil {
+				return ErrDACLOnlyCopied
+			}
+			return daclErr
+		}
+		return err
+	}
+
+	return nil
+}
+
+// copyDirectoryPermissionsWithOwner copies directory permissions including owner information
+func copyDirectoryPermissionsWithOwner(sourcePath, destPath string) error {
 	// ディレクトリのセキュリティ記述子を取得
 	sourceSD, err := getFileSecurity(sourcePath)
 	if err != nil {
@@ -267,6 +484,130 @@ func CopyDirectoryPermissions(sourcePath, destPath string) error {
 	}
 
 	fmt.Printf("DEBUG: Successfully set directory security descriptor for %s\n", destPath)
+	return nil
+}
+
+// copyDirectoryPermissionsDACLOnly copies only DACL (access control list) without owner information
+func copyDirectoryPermissionsDACLOnly(sourcePath, destPath string) error {
+	fmt.Printf("DEBUG: copyDirectoryPermissionsDACLOnly called: %s -> %s\n", sourcePath, destPath)
+
+	// ファイルパスをUTF16に変換
+	sourcePathPtr, pathErr := windows.UTF16PtrFromString(sourcePath)
+	if pathErr != nil {
+		return fmt.Errorf("ソースファイルパスの変換に失敗: %s (エラー: %v)", sourcePath, pathErr)
+	}
+
+	destPathPtr, pathErr := windows.UTF16PtrFromString(destPath)
+	if pathErr != nil {
+		return fmt.Errorf("宛先ファイルパスの変換に失敗: %s (エラー: %v)", destPath, pathErr)
+	}
+
+	// 最初に必要なサイズを取得（DACLのみ）
+	var sizeNeeded uint32
+	ret, _, callErr := procGetFileSecurityW.Call(
+		uintptr(unsafe.Pointer(sourcePathPtr)),
+		uintptr(DACL_SECURITY_INFORMATION),
+		0,
+		0,
+		uintptr(unsafe.Pointer(&sizeNeeded)),
+	)
+
+	fmt.Printf("DEBUG: GetFileSecurityW DACL first call: ret=%d, sizeNeeded=%d, callErr=%v\n", ret, sizeNeeded, callErr)
+
+	// ERROR_INSUFFICIENT_BUFFERの場合は正常な動作
+	if ret == 0 {
+		if callErr != nil && callErr.Error() == "The data area passed to a system call is too small." {
+			fmt.Printf("DEBUG: ERROR_INSUFFICIENT_BUFFER detected, continuing...\n")
+			// これは正常な動作なので続行
+		} else {
+			// GetLastError()を即座に呼び出してエラー情報を保持
+			err := syscall.GetLastError()
+			errDesc := getWindowsErrorDescription(err)
+			fmt.Printf("DEBUG: GetFileSecurityW DACL failed with error: %v (%s)\n", err, errDesc)
+
+			// エラーがnilの場合は、callErrから情報を取得
+			if err == nil && callErr != nil {
+				err = callErr
+				errDesc = getWindowsErrorDescription(err)
+				fmt.Printf("DEBUG: Using callErr as fallback: %v (%s)\n", err, errDesc)
+			}
+
+			return fmt.Errorf("ソースファイルのDACL情報を取得できません: %s (エラー: %v, 詳細: %s)", sourcePath, err, errDesc)
+		}
+	}
+
+	// サイズが0の場合はエラー
+	if sizeNeeded == 0 {
+		return fmt.Errorf("DACLのサイズが0です: %s", sourcePath)
+	}
+
+	fmt.Printf("DEBUG: Allocating DACL buffer of size %d for %s\n", sizeNeeded, sourcePath)
+
+	// 適切なサイズのバッファを確保
+	buffer := make([]byte, sizeNeeded)
+	ret, _, err := procGetFileSecurityW.Call(
+		uintptr(unsafe.Pointer(sourcePathPtr)),
+		uintptr(DACL_SECURITY_INFORMATION),
+		uintptr(unsafe.Pointer(&buffer[0])),
+		uintptr(sizeNeeded),
+		uintptr(unsafe.Pointer(&sizeNeeded)),
+	)
+
+	fmt.Printf("DEBUG: GetFileSecurityW DACL second call: ret=%d, err=%v\n", ret, err)
+
+	if ret == 0 {
+		// GetLastError()を即座に呼び出してエラー情報を保持
+		lastErr := syscall.GetLastError()
+		errDesc := getWindowsErrorDescription(lastErr)
+		fmt.Printf("DEBUG: GetFileSecurityW DACL second call failed with last error: %v (%s)\n", lastErr, errDesc)
+
+		// エラーがnilの場合は、errから情報を取得
+		if lastErr == nil && err != nil {
+			lastErr = err
+			errDesc = getWindowsErrorDescription(lastErr)
+			fmt.Printf("DEBUG: Using err as fallback: %v (%s)\n", lastErr, errDesc)
+		}
+
+		return fmt.Errorf("ソースファイルのDACL情報を取得できません: %s (エラー: %v, 詳細: %s)", sourcePath, lastErr, errDesc)
+	}
+
+	// セキュリティ記述子を解析
+	sourceSD := (*SecurityDescriptor)(unsafe.Pointer(&buffer[0]))
+	fmt.Printf("DEBUG: Successfully parsed source DACL for %s\n", sourcePath)
+
+	// DACLのみを宛先に設定
+	ret, _, callErr = procSetFileSecurityW.Call(
+		uintptr(unsafe.Pointer(destPathPtr)),
+		uintptr(DACL_SECURITY_INFORMATION),
+		uintptr(unsafe.Pointer(sourceSD)),
+	)
+
+	fmt.Printf("DEBUG: SetFileSecurityW DACL call: ret=%d, callErr=%v\n", ret, callErr)
+
+	if ret == 0 {
+		// GetLastError()を即座に呼び出してエラー情報を保持
+		lastErr := syscall.GetLastError()
+		errDesc := getWindowsErrorDescription(lastErr)
+		fmt.Printf("DEBUG: SetFileSecurityW DACL failed with last error: %v (%s)\n", lastErr, errDesc)
+
+		// エラーがnilの場合は、callErrから情報を取得
+		if lastErr == nil && callErr != nil {
+			lastErr = callErr
+			errDesc = getWindowsErrorDescription(lastErr)
+			fmt.Printf("DEBUG: Using callErr as fallback: %v (%s)\n", lastErr, errDesc)
+		}
+
+		// 詳細なエラー情報を提供
+		if lastErr == windows.ERROR_ACCESS_DENIED {
+			return fmt.Errorf("宛先ファイルのDACL設定に失敗（アクセス拒否）: %s (エラー: %v, 詳細: %s)", destPath, lastErr, errDesc)
+		} else if lastErr == windows.ERROR_PRIVILEGE_NOT_HELD {
+			return fmt.Errorf("宛先ファイルのDACL設定に失敗（特権不足）: %s (エラー: %v, 詳細: %s)", destPath, lastErr, errDesc)
+		} else {
+			return fmt.Errorf("宛先ファイルのDACL設定に失敗: %s (エラー: %v, 詳細: %s)", destPath, lastErr, errDesc)
+		}
+	}
+
+	fmt.Printf("DEBUG: Successfully set DACL for %s\n", destPath)
 	return nil
 }
 
