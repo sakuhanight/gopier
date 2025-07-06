@@ -199,6 +199,42 @@ Windowsでは、`--preserve-permissions`オプションを使用してファイ�
 - 権限昇格が成功すると、新しいプロセスが管理者権限で開始されます
 - 権限コピーはファイルとディレクトリの両方に適用されます
 
+#### GitHub Actionsでの管理者権限使用
+
+GitHub ActionsのワークフローでWindowsで管理者権限を使用する場合：
+
+**1. PowerShellを使用した管理者権限実行:**
+```yaml
+- name: Run with admin privileges
+  run: |
+    Write-Host "管理者権限で実行中..."
+    # 管理者権限が必要な操作
+  shell: powershell
+```
+
+**2. 管理者権限テストワークフロー:**
+```yaml
+test-windows-admin:
+  uses: ./.github/workflows/windows-admin.yml
+  with:
+    go-version: '1.21'
+    timeout-minutes: 40
+```
+
+**3. 管理者権限テストスクリプト:**
+```powershell
+# 管理者権限でテストを実行
+.\scripts\test-admin-privileges.ps1 -Verbose
+```
+
+**管理者権限で実行可能な操作:**
+- レジストリアクセス（HKLM）
+- システムサービス管理
+- プロセス管理
+- ファイルシステム権限変更
+- WMI（Windows Management Instrumentation）アクセス
+- システムレベルの設定変更
+
 ---
 
 ## テスト

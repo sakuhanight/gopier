@@ -57,6 +57,13 @@ jobs:
       coverage-flag: ${{ github.ref == 'refs/heads/develop' && 'develop' || 'unittests' }}
       timeout-minutes: 35
 
+  # Windows管理者権限テスト
+  test-windows-admin:
+    uses: ./.github/workflows/windows-admin.yml
+    with:
+      go-version: '1.21'
+      timeout-minutes: 40
+
 
 
   # ベンチマークテストジョブ

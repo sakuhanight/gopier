@@ -75,49 +75,48 @@ jobs:
       - name: Setup test environment (Windows)
         if: runner.os == 'Windows'
         run: |
-          mkdir test_output 2>nul
-          mkdir test_data 2>nul
-          mkdir coverage_reports 2>nul
-        shell: cmd
+          New-Item -ItemType Directory -Force -Path test_output, test_data, coverage_reports
+        shell: powershell
 
       - name: Build (Windows only)
         if: runner.os == 'Windows'
         run: |
-          echo "Building with lightweight configuration..."
+          Write-Host "Building with lightweight configuration..."
           
-          REM 軽量ビルド設定
-          set GOGC=200
-          set GOMEMLIMIT=256MiB
-          set GOMAXPROCS=2
-          set CGO_ENABLED=0
+          # 軽量ビルド設定
+          $env:GOGC = "200"
+          $env:GOMEMLIMIT = "256MiB"
+          $env:GOMAXPROCS = "2"
+          $env:CGO_ENABLED = "0"
           
-          REM 依存関係を事前にダウンロード
-          echo "Downloading dependencies..."
+          # 依存関係を事前にダウンロード
+          Write-Host "Downloading dependencies..."
           go mod download
           
-          REM 軽量版ビルド実行
-          echo "Running lightweight build..."
-          VERSION=test
-          BUILD_TIME=%DATE%_%TIME%
-          go build -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=%VERSION% -X github.com/sakuhanight/gopier/cmd.BuildTime=%BUILD_TIME%" -o gopier.exe
-          if %ERRORLEVEL% neq 0 (
-            echo "Lightweight build failed, trying with build.ps1..."
-            build.ps1 build
-            if %ERRORLEVEL% neq 0 (
-              echo "Build failed with exit code: %ERRORLEVEL%"
-              exit /b %ERRORLEVEL%
-            )
-          )
+          # 軽量版ビルド実行
+          Write-Host "Running lightweight build..."
+          $VERSION = "test"
+          $BUILD_TIME = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+          go build -ldflags "-X github.com/sakuhanight/gopier/cmd.Version=$VERSION -X github.com/sakuhanight/gopier/cmd.BuildTime=$BUILD_TIME" -o gopier.exe
           
-          REM Verify build
-          if exist "gopier.exe" (
-            echo "✓ Build successful: gopier.exe exists"
-            gopier.exe --help
-          ) else (
-            echo "✗ Build failed: gopier.exe not found"
-            exit /b 1
-          )
-        shell: cmd
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "Lightweight build failed, trying with build.ps1..."
+              .\build.ps1 build
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host "Build failed with exit code: $LASTEXITCODE"
+                  exit $LASTEXITCODE
+              }
+          }
+          
+          # Verify build
+          if (Test-Path "gopier.exe") {
+              Write-Host "✓ Build successful: gopier.exe exists"
+              .\gopier.exe --help
+          } else {
+              Write-Host "✗ Build failed: gopier.exe not found"
+              exit 1
+          }
+        shell: powershell
         timeout-minutes: 5
 
       - name: Run internal unit tests (Linux/macOS)
@@ -151,105 +150,110 @@ jobs:
       - name: Run internal unit tests (Windows)
         if: (inputs.test-type == 'unit' || inputs.test-type == 'all') && runner.os == 'Windows'
         run: |
-          echo "Running internal unit tests for Go ${{ inputs.go-version }} on Windows..."
+          Write-Host "Running internal unit tests for Go ${{ inputs.go-version }} on Windows..."
           
-          REM 環境情報の表示
-          echo "Environment information:"
-          echo "GOOS: %GOOS%"
-          echo "GOARCH: %GOARCH%"
-          echo "GOROOT: %GOROOT%"
-          echo "GOPATH: %GOPATH%"
-          echo "Current directory: %CD%"
-          echo "Available memory:"
-          wmic computersystem get TotalPhysicalMemory
+          # 環境情報の表示
+          Write-Host "Environment information:"
+          Write-Host "GOOS: $env:GOOS"
+          Write-Host "GOARCH: $env:GOARCH"
+          Write-Host "GOROOT: $env:GOROOT"
+          Write-Host "GOPATH: $env:GOPATH"
+          Write-Host "Current directory: $(Get-Location)"
+          Write-Host "Available memory:"
+          Get-WmiObject -Class Win32_ComputerSystem | Select-Object TotalPhysicalMemory
           go version
           
-          REM 軽量メモリ設定
-          set GOGC=200
-          set GOMEMLIMIT=256MiB
-          set GOMAXPROCS=2
-          set CGO_ENABLED=0
+          # 軽量メモリ設定
+          $env:GOGC = "200"
+          $env:GOMEMLIMIT = "256MiB"
+          $env:GOMAXPROCS = "2"
+          $env:CGO_ENABLED = "0"
           
-          REM テストファイルの存在確認
-          echo "Checking test files..."
-          dir /s /b *.go | findstr internal
+          # テストファイルの存在確認
+          Write-Host "Checking test files..."
+          Get-ChildItem -Recurse -Filter "*.go" | Where-Object { $_.FullName -like "*internal*" }
           
-          REM Internal unit tests (軽量版)
-          echo "Running internal unit tests..."
+          # Internal unit tests (軽量版)
+          Write-Host "Running internal unit tests..."
           
-          REM 個別パッケージでテスト実行
-          for /f "tokens=*" %%p in ('go list ./internal/...') do (
-            echo "Testing package: %%p"
-            go test -v -timeout=5m -parallel=1 %%p
-            if !ERRORLEVEL! neq 0 (
-              echo "Package %%p failed with exit code: !ERRORLEVEL!"
-              set TEST_EXIT_CODE=!ERRORLEVEL!
-            )
-          )
+          # 個別パッケージでテスト実行
+          $packages = go list ./internal/...
+          $testExitCode = 0
           
-          if %TEST_EXIT_CODE% neq 0 (
-            echo "Some internal unit tests failed with exit code: %TEST_EXIT_CODE%"
-            echo "Attempting to run with more verbose output..."
-            go test -v -timeout=10m -parallel=1 -count=1 ./internal/...
-            set RETRY_EXIT_CODE=%ERRORLEVEL%
-            echo "Retry exit code: %RETRY_EXIT_CODE%"
-            exit /b %TEST_EXIT_CODE%
-          )
-        shell: cmd
+          foreach ($pkg in $packages) {
+              Write-Host "Testing package: $pkg"
+              go test -v -timeout=5m -parallel=1 $pkg
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host "Package $pkg failed with exit code: $LASTEXITCODE"
+                  $testExitCode = $LASTEXITCODE
+              }
+          }
+          
+          if ($testExitCode -ne 0) {
+              Write-Host "Some internal unit tests failed with exit code: $testExitCode"
+              Write-Host "Attempting to run with more verbose output..."
+              go test -v -timeout=10m -parallel=1 -count=1 ./internal/...
+              $retryExitCode = $LASTEXITCODE
+              Write-Host "Retry exit code: $retryExitCode"
+              exit $testExitCode
+          }
+        shell: powershell
 
       - name: Run cmd unit tests (Windows)
         if: (inputs.test-type == 'unit' || inputs.test-type == 'all') && runner.os == 'Windows'
         run: |
-          echo "Running cmd unit tests for Go ${{ inputs.go-version }} on Windows..."
+          Write-Host "Running cmd unit tests for Go ${{ inputs.go-version }} on Windows..."
           
-          REM 環境情報の表示
-          echo "Environment information:"
-          echo "GOOS: %GOOS%"
-          echo "GOARCH: %GOARCH%"
-          echo "GOROOT: %GOROOT%"
-          echo "GOPATH: %GOPATH%"
-          echo "Current directory: %CD%"
-          echo "Available memory:"
-          wmic computersystem get TotalPhysicalMemory
+          # 環境情報の表示
+          Write-Host "Environment information:"
+          Write-Host "GOOS: $env:GOOS"
+          Write-Host "GOARCH: $env:GOARCH"
+          Write-Host "GOROOT: $env:GOROOT"
+          Write-Host "GOPATH: $env:GOPATH"
+          Write-Host "Current directory: $(Get-Location)"
+          Write-Host "Available memory:"
+          Get-WmiObject -Class Win32_ComputerSystem | Select-Object TotalPhysicalMemory
           go version
           
-          REM 軽量メモリ設定
-          set GOGC=200
-          set GOMEMLIMIT=256MiB
-          set GOMAXPROCS=2
-          set CGO_ENABLED=0
+          # 軽量メモリ設定
+          $env:GOGC = "200"
+          $env:GOMEMLIMIT = "256MiB"
+          $env:GOMAXPROCS = "2"
+          $env:CGO_ENABLED = "0"
           
-          REM テストファイルの存在確認
-          echo "Checking test files..."
-          dir /s /b *.go | findstr cmd
+          # テストファイルの存在確認
+          Write-Host "Checking test files..."
+          Get-ChildItem -Recurse -Filter "*.go" | Where-Object { $_.FullName -like "*cmd*" }
           
-          REM 依存関係を事前にダウンロード
-          echo "Downloading dependencies..."
+          # 依存関係を事前にダウンロード
+          Write-Host "Downloading dependencies..."
           go mod download
           
-          REM Cmd unit tests (軽量版)
-          echo "Running cmd unit tests..."
+          # Cmd unit tests (軽量版)
+          Write-Host "Running cmd unit tests..."
           
-          REM 個別パッケージでテスト実行
-          set TEST_EXIT_CODE=0
-          for /f "tokens=*" %%p in ('go list ./cmd/...') do (
-            echo "Testing package: %%p"
-            go test -v -timeout=5m -parallel=1 %%p
-            if !ERRORLEVEL! neq 0 (
-              echo "Package %%p failed with exit code: !ERRORLEVEL!"
-              set TEST_EXIT_CODE=!ERRORLEVEL!
-            )
-          )
+          # 個別パッケージでテスト実行
+          $packages = go list ./cmd/...
+          $testExitCode = 0
           
-          if %TEST_EXIT_CODE% neq 0 (
-            echo "Some cmd unit tests failed with exit code: %TEST_EXIT_CODE%"
-            echo "Attempting to run with more verbose output..."
-            go test -v -timeout=10m -parallel=1 -count=1 ./cmd/...
-            set RETRY_EXIT_CODE=%ERRORLEVEL%
-            echo "Retry exit code: %RETRY_EXIT_CODE%"
-            exit /b %TEST_EXIT_CODE%
-          )
-        shell: cmd
+          foreach ($pkg in $packages) {
+              Write-Host "Testing package: $pkg"
+              go test -v -timeout=5m -parallel=1 $pkg
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host "Package $pkg failed with exit code: $LASTEXITCODE"
+                  $testExitCode = $LASTEXITCODE
+              }
+          }
+          
+          if ($testExitCode -ne 0) {
+              Write-Host "Some cmd unit tests failed with exit code: $testExitCode"
+              Write-Host "Attempting to run with more verbose output..."
+              go test -v -timeout=10m -parallel=1 -count=1 ./cmd/...
+              $retryExitCode = $LASTEXITCODE
+              Write-Host "Retry exit code: $retryExitCode"
+              exit $testExitCode
+          }
+        shell: powershell
 
       - name: Run integration tests (Linux/macOS)
         if: (inputs.test-type == 'integration' || inputs.test-type == 'all') && runner.os != 'Windows'
@@ -268,22 +272,22 @@ jobs:
       - name: Run integration tests (Windows)
         if: (inputs.test-type == 'integration' || inputs.test-type == 'all') && runner.os == 'Windows'
         run: |
-          echo "Running integration tests for Go ${{ inputs.go-version }} on Windows..."
+          Write-Host "Running integration tests for Go ${{ inputs.go-version }} on Windows..."
           
-          REM 軽量メモリ設定
-          set GOGC=200
-          set GOMEMLIMIT=256MiB
-          set GOMAXPROCS=2
-          set CGO_ENABLED=0
+          # 軽量メモリ設定
+          $env:GOGC = "200"
+          $env:GOMEMLIMIT = "256MiB"
+          $env:GOMAXPROCS = "2"
+          $env:CGO_ENABLED = "0"
           
-          REM Integration tests (軽量版)
-          echo "Running integration tests..."
+          # Integration tests (軽量版)
+          Write-Host "Running integration tests..."
           go test -v -timeout=5m -parallel=2 ./tests/...
-          if %ERRORLEVEL% neq 0 (
-            echo "Integration tests failed with exit code: %ERRORLEVEL%"
-            exit /b %ERRORLEVEL%
-          )
-        shell: cmd
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "Integration tests failed with exit code: $LASTEXITCODE"
+              exit $LASTEXITCODE
+          }
+        shell: powershell
 
       - name: Run coverage tests (Linux/macOS)
         if: inputs.test-type == 'all' && runner.os != 'Windows'
@@ -307,46 +311,46 @@ jobs:
       - name: Run coverage tests (Windows)
         if: inputs.test-type == 'all' && runner.os == 'Windows'
         run: |
-          echo "Running tests with coverage on Windows..."
+          Write-Host "Running tests with coverage on Windows..."
           
-          REM 環境情報の表示
-          echo "Environment information:"
-          echo "GOOS: %GOOS%"
-          echo "GOARCH: %GOARCH%"
-          echo "Current directory: %CD%"
+          # 環境情報の表示
+          Write-Host "Environment information:"
+          Write-Host "GOOS: $env:GOOS"
+          Write-Host "GOARCH: $env:GOARCH"
+          Write-Host "Current directory: $(Get-Location)"
           go version
           
-          REM 軽量メモリ設定
-          set GOGC=200
-          set GOMEMLIMIT=256MiB
-          set GOMAXPROCS=2
-          set CGO_ENABLED=0
+          # 軽量メモリ設定
+          $env:GOGC = "200"
+          $env:GOMEMLIMIT = "256MiB"
+          $env:GOMAXPROCS = "2"
+          $env:CGO_ENABLED = "0"
           
-          REM 依存関係を事前にダウンロード
-          echo "Downloading dependencies..."
+          # 依存関係を事前にダウンロード
+          Write-Host "Downloading dependencies..."
           go mod download
           
-          REM Coverage tests (軽量版)
-          echo "Running coverage tests..."
+          # Coverage tests (軽量版)
+          Write-Host "Running coverage tests..."
           go test -v -coverprofile=coverage.out -timeout=10m -parallel=1 ./internal/...
-          if %ERRORLEVEL% neq 0 (
-            echo "Coverage tests failed with exit code: %ERRORLEVEL%"
-            echo "Attempting to run with more verbose output..."
-            go test -v -coverprofile=coverage.out -timeout=15m -parallel=1 -count=1 ./internal/...
-            set RETRY_EXIT_CODE=%ERRORLEVEL%
-            echo "Retry exit code: %RETRY_EXIT_CODE%"
-            exit /b %ERRORLEVEL%
-          )
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "Coverage tests failed with exit code: $LASTEXITCODE"
+              Write-Host "Attempting to run with more verbose output..."
+              go test -v -coverprofile=coverage.out -timeout=15m -parallel=1 -count=1 ./internal/...
+              $retryExitCode = $LASTEXITCODE
+              Write-Host "Retry exit code: $retryExitCode"
+              exit $LASTEXITCODE
+          }
           
-          if exist "coverage.out" (
-            echo "Coverage file generated successfully"
-            go tool cover -html=coverage.out -o coverage.html 2>nul || echo "HTML report generation skipped"
-            go tool cover -func=coverage.out || echo "Coverage function report generation skipped"
-          ) else (
-            echo "Coverage file not found"
-            exit /b 1
-          )
-        shell: cmd
+          if (Test-Path "coverage.out") {
+              Write-Host "Coverage file generated successfully"
+              go tool cover -html=coverage.out -o coverage.html 2>$null || Write-Host "HTML report generation skipped"
+              go tool cover -func=coverage.out || Write-Host "Coverage function report generation skipped"
+          } else {
+              Write-Host "Coverage file not found"
+              exit 1
+          }
+        shell: powershell
 
       - name: Upload coverage to Codecov
         if: inputs.test-type == 'all' && hashFiles('coverage.out') != ''
