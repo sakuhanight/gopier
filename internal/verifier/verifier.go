@@ -122,6 +122,16 @@ func (v *Verifier) Cancel() {
 	v.cancel()
 }
 
+// SetTimeout はタイムアウト時間を設定する
+func (v *Verifier) SetTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		// 既存のコンテキストをキャンセル
+		v.cancel()
+		// 新しいタイムアウト付きコンテキストを作成
+		v.ctx, v.cancel = context.WithTimeout(context.Background(), timeout)
+	}
+}
+
 // GetResults は検証結果を返す
 func (v *Verifier) GetResults() []VerificationResult {
 	return v.results

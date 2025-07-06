@@ -25,7 +25,9 @@ skip_newer: false  # 宛先の方が新しい場合はスキップ
 no_progress: false  # 進捗表示を無効化
 no_confirm: false  # 確認を省略してコピーを実行
 preserve_mod_time: true  # 更新日時を保持
+preserve_permissions: false  # ファイルアクセス権限を保持（Windowsのみ）
 overwrite_existing: true  # 既存ファイルを上書き
+timeout: ""  # タイムアウト時間（例: "30s", "5m", "2h"）
 
 # 同期設定
 sync_mode: "normal"  # 同期モード (normal, initial, incremental)

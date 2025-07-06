@@ -130,6 +130,16 @@ func (fc *FileCopier) Cancel() {
 	fc.cancel()
 }
 
+// SetTimeout はタイムアウト時間を設定する
+func (fc *FileCopier) SetTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		// 既存のコンテキストをキャンセル
+		fc.cancel()
+		// 新しいタイムアウト付きコンテキストを作成
+		fc.ctx, fc.cancel = context.WithTimeout(context.Background(), timeout)
+	}
+}
+
 // CopyFiles はファイルをコピーする
 func (fc *FileCopier) CopyFiles() error {
 	// 同期セッションの開始

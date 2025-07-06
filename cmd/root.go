@@ -68,6 +68,7 @@ var (
 	recursive           bool
 	preservePermissions bool
 	noConfirm           bool
+	timeout             string
 
 	// 同期モード関連
 	syncMode      string
@@ -98,16 +99,17 @@ type Config struct {
 	ExcludePattern string `mapstructure:"exclude_pattern"`
 
 	// 動作設定
-	Recursive           bool `mapstructure:"recursive"`
-	Mirror              bool `mapstructure:"mirror"`
-	DryRun              bool `mapstructure:"dry_run"`
-	Verbose             bool `mapstructure:"verbose"`
-	SkipNewer           bool `mapstructure:"skip_newer"`
-	NoProgress          bool `mapstructure:"no_progress"`
-	NoConfirm           bool `mapstructure:"no_confirm"`
-	PreserveModTime     bool `mapstructure:"preserve_mod_time"`
-	PreservePermissions bool `mapstructure:"preserve_permissions"`
-	OverwriteExisting   bool `mapstructure:"overwrite_existing"`
+	Recursive           bool   `mapstructure:"recursive"`
+	Mirror              bool   `mapstructure:"mirror"`
+	DryRun              bool   `mapstructure:"dry_run"`
+	Verbose             bool   `mapstructure:"verbose"`
+	SkipNewer           bool   `mapstructure:"skip_newer"`
+	NoProgress          bool   `mapstructure:"no_progress"`
+	NoConfirm           bool   `mapstructure:"no_confirm"`
+	PreserveModTime     bool   `mapstructure:"preserve_mod_time"`
+	PreservePermissions bool   `mapstructure:"preserve_permissions"`
+	OverwriteExisting   bool   `mapstructure:"overwrite_existing"`
+	Timeout             string `mapstructure:"timeout"`
 
 	// 同期設定
 	SyncMode      string `mapstructure:"sync_mode"`
@@ -168,6 +170,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.Flags().Bool("auto-elevate", false, "管理者権限が必要な場合に自動的にUACダイアログを表示（Windowsのみ）")
 	rootCmd.Flags().Bool("no-elevate", false, "管理者権限が必要な場合でもUACダイアログを表示しない（Windowsのみ）")
 	rootCmd.Flags().BoolVarP(&noConfirm, "no-confirm", "y", false, "確認を省略してコピーを実行")
+	rootCmd.Flags().StringVarP(&timeout, "timeout", "t", "", "タイムアウト時間（例: 30s, 5m, 2h）")
 
 	// 同期モード関連のフラグ
 	rootCmd.Flags().StringVarP(&syncMode, "mode", "", "normal", "同期モード (initial:初期同期, incremental:追加同期)")
@@ -400,8 +403,20 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// タイムアウトの解析
+	timeoutDuration, err := parseTimeout(timeout)
+	if err != nil {
+		return fmt.Errorf("タイムアウト設定エラー: %w", err)
+	}
+
 	// ファイルコピーの実行
 	fileCopier := copier.NewFileCopier(sourceDir, destDir, options, fileFilter, syncDB, log)
+
+	// タイムアウトが設定されている場合、コンテキストにタイムアウトを追加
+	if timeoutDuration > 0 {
+		log.Info("タイムアウト設定: %v", timeoutDuration)
+		fileCopier.SetTimeout(timeoutDuration)
+	}
 
 	// 進捗表示の設定
 	if !noProgress {
@@ -419,7 +434,7 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 	log.Info("宛先: %s", destDir)
 	log.Info("権限コピー: %v", preservePermissions)
 
-	err := fileCopier.CopyFiles()
+	err = fileCopier.CopyFiles()
 	if err != nil {
 		log.Error("ファイルコピーエラー: %v", err)
 		return fmt.Errorf("ファイルコピーエラー: %w", err)
@@ -696,6 +711,9 @@ func bindConfigToFlags(config *Config, cmd *cobra.Command) {
 	if !cmd.Flags().Changed("preserve-permissions") && config.PreservePermissions {
 		preservePermissions = config.PreservePermissions
 	}
+	if timeout == "" && config.Timeout != "" {
+		timeout = config.Timeout
+	}
 
 	// 同期設定
 	if syncMode == "" && config.SyncMode != "" {
@@ -754,6 +772,7 @@ func createDefaultConfig(configPath string) error {
 		PreserveModTime:     true,
 		PreservePermissions: false,
 		OverwriteExisting:   true,
+		Timeout:             "",
 
 		// 同期設定
 		SyncMode:      "normal",
@@ -824,6 +843,7 @@ func showCurrentConfig() {
 		NoConfirm:           noConfirm,
 		PreserveModTime:     true, // デフォルト値
 		PreservePermissions: preservePermissions,
+		Timeout:             timeout,
 		OverwriteExisting:   !skipNewer,
 
 		// 同期設定
@@ -1169,6 +1189,24 @@ func truncateString(s string, maxLen int) string {
 	return string(runes[:maxLen-3]) + "..."
 }
 
+// parseTimeout はタイムアウト文字列を解析してtime.Durationを返す
+func parseTimeout(timeoutStr string) (time.Duration, error) {
+	if timeoutStr == "" {
+		return 0, nil // タイムアウトなし
+	}
+
+	duration, err := time.ParseDuration(timeoutStr)
+	if err != nil {
+		return 0, fmt.Errorf("タイムアウト時間の解析エラー: %w", err)
+	}
+
+	if duration <= 0 {
+		return 0, fmt.Errorf("タイムアウト時間は正の値である必要があります")
+	}
+
+	return duration, nil
+}
+
 func calculateTotalSize(files []database.FileInfo) int64 {
 	var total int64
 	for _, file := range files {
@@ -1279,6 +1317,9 @@ func askForConfirmation(sourceDir, destDir string, options *copier.Options, file
 	fmt.Printf("  詳細ログ: %v\n", verbose)
 	fmt.Printf("  進捗表示: %v\n", !noProgress)
 	fmt.Printf("  ドライラン: %v\n", dryRun)
+	if timeout != "" {
+		fmt.Printf("  タイムアウト: %s\n", timeout)
+	}
 
 	fmt.Print("\n上記の設定でコピーを開始しますか？ (y/N): ")
 

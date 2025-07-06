@@ -1783,3 +1783,85 @@ func TestVerifier_IgnoreMissingFiles(t *testing.T) {
 		t.Errorf("欠落ファイルを無視してエラーが発生すべきではありません: %v", err)
 	}
 }
+
+// TestVerifier_SetTimeout はタイムアウト設定のテスト
+func TestVerifier_SetTimeout(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 大きなファイルを作成（検証に時間がかかるように）
+	largeFile := filepath.Join(sourceDir, "large.txt")
+	largeData := make([]byte, 10*1024*1024) // 10MB
+	for i := range largeData {
+		largeData[i] = byte(i % 256)
+	}
+	os.WriteFile(largeFile, largeData, 0644)
+	os.WriteFile(filepath.Join(destDir, "large.txt"), largeData, 0644)
+
+	options := DefaultOptions()
+	options.BufferSize = 1024 // 小さなバッファで時間をかける
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 短いタイムアウトを設定
+	timeout := 100 * time.Millisecond
+	verifier.SetTimeout(timeout)
+
+	// タイムアウトが設定されていることを確認
+	select {
+	case <-verifier.ctx.Done():
+		t.Error("タイムアウトが設定されていないのにコンテキストがキャンセルされています")
+	default:
+		// OK
+	}
+
+	// 検証を実行（タイムアウトで中断されるはず）
+	err := verifier.Verify()
+	if err == nil {
+		t.Error("タイムアウトが発生すべきです")
+		return
+	}
+
+	// タイムアウトエラーかキャンセルエラーであることを確認
+	if !strings.Contains(err.Error(), "タイムアウト") && !strings.Contains(err.Error(), "キャンセル") {
+		t.Errorf("期待されるエラーメッセージに'タイムアウト'または'キャンセル'が含まれていません: %v", err)
+	}
+}
+
+// TestVerifier_SetTimeoutZero はゼロタイムアウトのテスト
+func TestVerifier_SetTimeoutZero(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	srcFile := filepath.Join(sourceDir, "test.txt")
+	dstFile := filepath.Join(destDir, "test.txt")
+	content := []byte("test content")
+	os.WriteFile(srcFile, content, 0644)
+	os.WriteFile(dstFile, content, 0644)
+
+	options := DefaultOptions()
+	verifier := NewVerifier(sourceDir, destDir, options, nil, nil)
+
+	// 元のコンテキストを保存
+	originalCtx := verifier.ctx
+
+	// ゼロタイムアウトを設定
+	verifier.SetTimeout(0)
+
+	// コンテキストが変更されていないことを確認
+	if verifier.ctx != originalCtx {
+		t.Error("ゼロタイムアウトではコンテキストが変更されるべきではありません")
+	}
+
+	// 検証が正常に実行されることを確認
+	err := verifier.Verify()
+	if err != nil {
+		t.Errorf("ゼロタイムアウトでは検証が成功すべきです: %v", err)
+	}
+}

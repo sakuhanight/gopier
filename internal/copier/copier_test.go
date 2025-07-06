@@ -2115,3 +2115,81 @@ func TestCopyFile_CreateDirsEnabled(t *testing.T) {
 		t.Errorf("ディレクトリ作成有効でエラーが発生すべきではありません: %v", err)
 	}
 }
+
+// TestFileCopier_SetTimeout はタイムアウト設定のテスト
+func TestFileCopier_SetTimeout(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// 大きなファイルを作成（コピーに時間がかかるように）
+	largeFile := filepath.Join(sourceDir, "large.txt")
+	largeData := make([]byte, 10*1024*1024) // 10MB
+	for i := range largeData {
+		largeData[i] = byte(i % 256)
+	}
+	os.WriteFile(largeFile, largeData, 0644)
+
+	options := DefaultOptions()
+	options.BufferSize = 1024 // 小さなバッファで時間をかける
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	// 短いタイムアウトを設定
+	timeout := 100 * time.Millisecond
+	copier.SetTimeout(timeout)
+
+	// タイムアウトが設定されていることを確認
+	select {
+	case <-copier.ctx.Done():
+		t.Error("タイムアウトが設定されていないのにコンテキストがキャンセルされています")
+	default:
+		// OK
+	}
+
+	// コピーを実行（タイムアウトで中断されるはず）
+	err := copier.CopyFiles()
+	if err == nil {
+		t.Error("タイムアウトが発生すべきです")
+		return
+	}
+
+	// タイムアウトエラーかキャンセルエラーであることを確認
+	if !strings.Contains(err.Error(), "タイムアウト") && !strings.Contains(err.Error(), "キャンセル") {
+		t.Errorf("期待されるエラーメッセージに'タイムアウト'または'キャンセル'が含まれていません: %v", err)
+	}
+}
+
+// TestFileCopier_SetTimeoutZero はゼロタイムアウトのテスト
+func TestFileCopier_SetTimeoutZero(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	os.MkdirAll(sourceDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// テストファイルを作成
+	srcFile := filepath.Join(sourceDir, "test.txt")
+	os.WriteFile(srcFile, []byte("test content"), 0644)
+
+	options := DefaultOptions()
+	copier := NewFileCopier(sourceDir, destDir, options, nil, nil, nil)
+
+	// 元のコンテキストを保存
+	originalCtx := copier.ctx
+
+	// ゼロタイムアウトを設定
+	copier.SetTimeout(0)
+
+	// コンテキストが変更されていないことを確認
+	if copier.ctx != originalCtx {
+		t.Error("ゼロタイムアウトではコンテキストが変更されるべきではありません")
+	}
+
+	// コピーが正常に実行されることを確認
+	err := copier.CopyFiles()
+	if err != nil {
+		t.Errorf("ゼロタイムアウトではコピーが成功すべきです: %v", err)
+	}
+}

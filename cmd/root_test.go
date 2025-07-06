@@ -1016,3 +1016,39 @@ func TestInitConfigDefault(t *testing.T) {
 	// フラグを元に戻す
 	cfgFile = originalCfgFile
 }
+
+func TestTimeoutOption(t *testing.T) {
+	tests := []struct {
+		name        string
+		timeoutStr  string
+		expectError bool
+	}{
+		{"有効な秒数", "30s", false},
+		{"有効な分数", "5m", false},
+		{"有効な時間", "2h", false},
+		{"有効な複合時間", "1h30m", false},
+		{"空文字列", "", false},
+		{"無効な形式", "invalid", true},
+		{"負の値", "-30s", true},
+		{"ゼロ値", "0s", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			duration, err := parseTimeout(tt.timeoutStr)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("エラーが期待されましたが、エラーが発生しませんでした")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("エラーが発生しました: %v", err)
+				}
+				if tt.timeoutStr != "" && duration <= 0 {
+					t.Errorf("正のタイムアウト時間が期待されましたが、%vが返されました", duration)
+				}
+			}
+		})
+	}
+}

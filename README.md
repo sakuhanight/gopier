@@ -128,6 +128,7 @@ verify_hash: true
 - `verbose`: 詳細ログ
 - `preserve_mod_time`: 更新日時の保持
 - `preserve_permissions`: ファイルアクセス権限の保持（Windowsのみ）
+- `timeout`: タイムアウト時間（例: "30s", "5m", "2h"）
 - `sync_mode`: `normal`/`initial`/`incremental`
 - `sync_db_path`: 同期状態DBファイル
 - `verify_only`/`verify_changed`/`verify_all`: ハッシュ検証
@@ -150,6 +151,7 @@ verify_hash: true
 - `-v, --verbose`: 詳細ログ
 - `-p, --preserve-permissions`: ファイルアクセス権限を保持（Windowsのみ）
 - `-y, --no-confirm`: 確認を省略してコピーを実行
+- `-t, --timeout`: タイムアウト時間（例: 30s, 5m, 2h）
 - `--auto-elevate`: 管理者権限が必要な場合に自動的にUACダイアログを表示（Windowsのみ）
 - `--no-elevate`: 管理者権限が必要な場合でもUACダイアログを表示しない（Windowsのみ）
 - `--verify-only`: コピーせず検証のみ
@@ -174,6 +176,10 @@ verify_hash: true
 - 確認を省略してコピー:
   ```sh
   ./gopier -s ./src -d ./dst -y
+  ```
+- タイムアウト付きでコピー:
+  ```sh
+  ./gopier -s ./src -d ./dst -t 30m
   ```
 
 ### Windows固有機能
