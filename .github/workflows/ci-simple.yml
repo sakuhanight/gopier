@@ -175,9 +175,9 @@ jobs:
           }
           
           if (Test-Path "gopier.exe") {
-              Write-Host "✓ Build successful"
+              Write-Host "V Build successful"
           } else {
-              Write-Host "✗ Build failed: gopier.exe not found"
+              Write-Host "X Build failed: gopier.exe not found"
               exit 1
           }
         shell: powershell
@@ -322,7 +322,7 @@ jobs:
       matrix:
         platform: [Linux, Windows]
         go-version: ['1.23']
-    runs-on: [self-hosted, Linux]
+    runs-on: ${{ matrix.platform == 'Linux' && 'self-hosted, Linux' || 'self-hosted, Windows' }}
     timeout-minutes: 30
     if: github.ref == 'refs/heads/develop'
 
@@ -352,19 +352,30 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Setup benchmark environment
+      - name: Setup benchmark environment (Linux)
+        if: matrix.platform == 'Linux'
         run: |
-          if [ "${{ matrix.platform }}" = "Linux" ]; then
-            mkdir -p benchmark_output
-            chmod 755 benchmark_output
-          else
-            New-Item -ItemType Directory -Force -Path benchmark_output
-          fi
+          mkdir -p benchmark_output
+          chmod 755 benchmark_output
 
-      - name: Run benchmarks
+      - name: Setup benchmark environment (Windows)
+        if: matrix.platform == 'Windows'
         run: |
-          echo "Running benchmarks on ${{ matrix.platform }}..."
+          New-Item -ItemType Directory -Force -Path benchmark_output
+        shell: powershell
+
+      - name: Run benchmarks (Linux)
+        if: matrix.platform == 'Linux'
+        run: |
+          echo "Running benchmarks on Linux..."
           go test -v -bench=. -benchmem -timeout=20m ./internal/... ./cmd/... || exit 1
+
+      - name: Run benchmarks (Windows)
+        if: matrix.platform == 'Windows'
+        run: |
+          echo "Running benchmarks on Windows..."
+          go test -v -bench=. -benchmem -timeout=20m ./internal/... ./cmd/... || exit 1
+        shell: powershell
 
   # Build job
   build:
