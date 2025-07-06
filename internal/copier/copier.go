@@ -183,22 +183,48 @@ func (fc *FileCopier) CopyFiles() error {
 			// ディレクトリアクセス権限の保持（Windowsのみ）
 			if fc.options.PreservePermissions {
 				if permissions.CanCopyPermissions() {
+					fmt.Printf("DEBUG: Attempting to copy directory permissions: %s -> %s\n", fc.sourceDir, fc.destDir)
+
+					// 詳細なACLコピー機能を使用
 					if err = permissions.CopyDirectoryPermissions(fc.sourceDir, fc.destDir); err != nil {
-						// loggerでエラー出力（権限コピーエラーは致命的ではない）
-						if fc.logger != nil && fc.logger.Verbose {
-							fc.logger.Warn("ディレクトリ権限のコピーエラー: %s -> %s: %v", fc.sourceDir, fc.destDir, err)
+						// 詳細なエラー情報をログに記録
+						if fc.logger != nil {
+							if fc.logger.Verbose {
+								fc.logger.Warn("ディレクトリ権限のコピーエラー: %s -> %s: %v", fc.sourceDir, fc.destDir, err)
+							} else {
+								fc.logger.Warn("ディレクトリ権限コピー失敗: %s", filepath.Base(fc.sourceDir))
+							}
 						}
+
+						// エラーの種類に応じた詳細情報を出力
+						if err.Error() == "ファイルのセキュリティ情報を設定できません（アクセス拒否）" {
+							fmt.Printf("ERROR: ディレクトリアクセス拒否エラー - 管理者権限が必要です: %s\n", fc.destDir)
+						} else if err.Error() == "ファイルのセキュリティ情報を設定できません（特権不足）" {
+							fmt.Printf("ERROR: ディレクトリ特権不足エラー - セキュリティ特権が必要です: %s\n", fc.destDir)
+						} else {
+							fmt.Printf("ERROR: ディレクトリ権限コピーエラー: %s -> %s: %v\n", fc.sourceDir, fc.destDir, err)
+						}
+
 						// 権限コピーエラーは警告として記録するが、コピー処理は続行
 					} else {
 						// loggerで成功情報を出力
-						if fc.logger != nil && fc.logger.Verbose {
-							fc.logger.Info("ディレクトリ権限をコピーしました: %s", fc.destDir)
+						if fc.logger != nil {
+							if fc.logger.Verbose {
+								fc.logger.Info("ディレクトリ権限をコピーしました: %s", fc.destDir)
+							} else {
+								fc.logger.Info("ディレクトリ権限コピー成功: %s", filepath.Base(fc.sourceDir))
+							}
 						}
+						fmt.Printf("DEBUG: Successfully copied directory permissions: %s\n", fc.destDir)
 					}
 				} else {
 					// loggerで警告出力
-					if fc.logger != nil && fc.logger.Verbose {
-						fc.logger.Warn("ディレクトリ権限のコピーは現在のプラットフォームではサポートされていません")
+					if fc.logger != nil {
+						if fc.logger.Verbose {
+							fc.logger.Warn("ディレクトリ権限のコピーは現在のプラットフォームではサポートされていません")
+						} else {
+							fc.logger.Warn("ディレクトリ権限コピー非対応プラットフォーム")
+						}
 					}
 				}
 			}
@@ -313,22 +339,48 @@ func (fc *FileCopier) copyDirectory(sourceDir, destDir string) error {
 		// ディレクトリアクセス権限の保持（Windowsのみ）
 		if fc.options.PreservePermissions {
 			if permissions.CanCopyPermissions() {
+				fmt.Printf("DEBUG: Attempting to copy subdirectory permissions: %s -> %s\n", sourceDir, destDir)
+
+				// 詳細なACLコピー機能を使用
 				if err = permissions.CopyDirectoryPermissions(sourceDir, destDir); err != nil {
-					// loggerでエラー出力（権限コピーエラーは致命的ではない）
-					if fc.logger != nil && fc.logger.Verbose {
-						fc.logger.Warn("ディレクトリ権限のコピーエラー: %s -> %s: %v", sourceDir, destDir, err)
+					// 詳細なエラー情報をログに記録
+					if fc.logger != nil {
+						if fc.logger.Verbose {
+							fc.logger.Warn("サブディレクトリ権限のコピーエラー: %s -> %s: %v", sourceDir, destDir, err)
+						} else {
+							fc.logger.Warn("サブディレクトリ権限コピー失敗: %s", filepath.Base(sourceDir))
+						}
 					}
+
+					// エラーの種類に応じた詳細情報を出力
+					if err.Error() == "ファイルのセキュリティ情報を設定できません（アクセス拒否）" {
+						fmt.Printf("ERROR: サブディレクトリアクセス拒否エラー - 管理者権限が必要です: %s\n", destDir)
+					} else if err.Error() == "ファイルのセキュリティ情報を設定できません（特権不足）" {
+						fmt.Printf("ERROR: サブディレクトリ特権不足エラー - セキュリティ特権が必要です: %s\n", destDir)
+					} else {
+						fmt.Printf("ERROR: サブディレクトリ権限コピーエラー: %s -> %s: %v\n", sourceDir, destDir, err)
+					}
+
 					// 権限コピーエラーは警告として記録するが、コピー処理は続行
 				} else {
 					// loggerで成功情報を出力
-					if fc.logger != nil && fc.logger.Verbose {
-						fc.logger.Info("ディレクトリ権限をコピーしました: %s", destDir)
+					if fc.logger != nil {
+						if fc.logger.Verbose {
+							fc.logger.Info("サブディレクトリ権限をコピーしました: %s", destDir)
+						} else {
+							fc.logger.Info("サブディレクトリ権限コピー成功: %s", filepath.Base(sourceDir))
+						}
 					}
+					fmt.Printf("DEBUG: Successfully copied subdirectory permissions: %s\n", destDir)
 				}
 			} else {
 				// loggerで警告出力
-				if fc.logger != nil && fc.logger.Verbose {
-					fc.logger.Warn("ディレクトリ権限のコピーは現在のプラットフォームではサポートされていません")
+				if fc.logger != nil {
+					if fc.logger.Verbose {
+						fc.logger.Warn("ディレクトリ権限のコピーは現在のプラットフォームではサポートされていません")
+					} else {
+						fc.logger.Warn("ディレクトリ権限コピー非対応プラットフォーム")
+					}
 				}
 			}
 		}
@@ -776,22 +828,47 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 	// ファイルアクセス権限の保持（Windowsのみ）
 	if fc.options.PreservePermissions {
 		if permissions.CanCopyPermissions() {
+			fmt.Printf("DEBUG: Attempting to copy file permissions: %s -> %s\n", sourcePath, destPath)
+
 			if err = permissions.CopyFilePermissions(sourcePath, destPath); err != nil {
-				// loggerでエラー出力（権限コピーエラーは致命的ではない）
-				if fc.logger != nil && fc.logger.Verbose {
-					fc.logger.Warn("ファイル権限のコピーエラー: %s -> %s: %v", sourcePath, destPath, err)
+				// 詳細なエラー情報をログに記録
+				if fc.logger != nil {
+					if fc.logger.Verbose {
+						fc.logger.Warn("ファイル権限のコピーエラー: %s -> %s: %v", sourcePath, destPath, err)
+					} else {
+						fc.logger.Warn("権限コピー失敗: %s", filepath.Base(sourcePath))
+					}
 				}
+
+				// エラーの種類に応じた詳細情報を出力
+				if err.Error() == "ファイルのセキュリティ情報を設定できません（アクセス拒否）" {
+					fmt.Printf("ERROR: アクセス拒否エラー - 管理者権限が必要です: %s\n", destPath)
+				} else if err.Error() == "ファイルのセキュリティ情報を設定できません（特権不足）" {
+					fmt.Printf("ERROR: 特権不足エラー - セキュリティ特権が必要です: %s\n", destPath)
+				} else {
+					fmt.Printf("ERROR: 権限コピーエラー: %s -> %s: %v\n", sourcePath, destPath, err)
+				}
+
 				// 権限コピーエラーは警告として記録するが、コピー処理は続行
 			} else {
 				// loggerで成功情報を出力
-				if fc.logger != nil && fc.logger.Verbose {
-					fc.logger.Info("ファイル権限をコピーしました: %s", destPath)
+				if fc.logger != nil {
+					if fc.logger.Verbose {
+						fc.logger.Info("ファイル権限をコピーしました: %s", destPath)
+					} else {
+						fc.logger.Info("権限コピー成功: %s", filepath.Base(sourcePath))
+					}
 				}
+				fmt.Printf("DEBUG: Successfully copied file permissions: %s\n", destPath)
 			}
 		} else {
 			// loggerで警告出力
-			if fc.logger != nil && fc.logger.Verbose {
-				fc.logger.Warn("ファイル権限のコピーは現在のプラットフォームではサポートされていません")
+			if fc.logger != nil {
+				if fc.logger.Verbose {
+					fc.logger.Warn("ファイル権限のコピーは現在のプラットフォームではサポートされていません")
+				} else {
+					fc.logger.Warn("権限コピー非対応プラットフォーム")
+				}
 			}
 		}
 	}

@@ -36,6 +36,7 @@ import (
 	"github.com/sakuhanight/gopier/internal/database"
 	"github.com/sakuhanight/gopier/internal/filter"
 	"github.com/sakuhanight/gopier/internal/logger"
+	"github.com/sakuhanight/gopier/internal/permissions"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -161,6 +162,8 @@ func newRootCmd() *cobra.Command {
 	rootCmd.Flags().IntVarP(&bufferSize, "buffer", "b", 8, "バッファサイズ（MB）")
 	rootCmd.Flags().BoolVarP(&recursive, "recursive", "R", true, "サブディレクトリを再帰的にコピー")
 	rootCmd.Flags().BoolVarP(&preservePermissions, "preserve-permissions", "p", false, "ファイルアクセス権限を保持（Windowsのみ）")
+	rootCmd.Flags().Bool("auto-elevate", false, "管理者権限が必要な場合に自動的にUACダイアログを表示（Windowsのみ）")
+	rootCmd.Flags().Bool("no-elevate", false, "管理者権限が必要な場合でもUACダイアログを表示しない（Windowsのみ）")
 
 	// 同期モード関連のフラグ
 	rootCmd.Flags().StringVarP(&syncMode, "mode", "", "normal", "同期モード (initial:初期同期, incremental:追加同期)")
@@ -331,6 +334,32 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 		defer syncDB.Close()
 	}
 
+	// 管理者権限チェック（権限コピーが有効な場合）
+	if preservePermissions {
+		fmt.Printf("権限昇格状態: %s\n", permissions.GetElevationStatus())
+
+		// 権限昇格オプションの確認
+		autoElevate, _ := cmd.Flags().GetBool("auto-elevate")
+		noElevate, _ := cmd.Flags().GetBool("no-elevate")
+
+		if noElevate {
+			// 権限昇格を無効化
+			if !permissions.IsAdmin() {
+				return fmt.Errorf("管理者権限が必要ですが、--no-elevateオプションが指定されているため権限昇格を実行しません")
+			}
+		} else if autoElevate {
+			// 自動権限昇格
+			if err := permissions.ElevateForPermissions(); err != nil {
+				return err
+			}
+		} else {
+			// 通常の権限チェック（ユーザー確認あり）
+			if err := permissions.CheckAdminForPermissions(); err != nil {
+				return err
+			}
+		}
+	}
+
 	// コピーオプションの設定
 	options := copier.DefaultOptions()
 	options.BufferSize = bufferSize * 1024 * 1024 // MBをバイトに変換
@@ -392,6 +421,48 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 	log.Info("スキップされたファイル数: %d", stats.GetSkippedCount())
 	log.Info("失敗したファイル数: %d", stats.GetFailedCount())
 	log.Info("コピーされたバイト数: %d", stats.GetCopiedBytes())
+
+	// 権限コピーが有効で、Windowsの場合、コピー完了後にすべてのファイルとディレクトリの権限を再帰的に同期
+	if preservePermissions && permissions.IsWindows() {
+		log.Info("ACL同期を開始します")
+
+		// 進捗表示の設定
+		var progressCallback func(current, total int, currentPath string)
+		if !noProgress {
+			progressCallback = func(current, total int, currentPath string) {
+				if total > 0 {
+					percentage := float64(current) / float64(total) * 100
+					relPath, _ := filepath.Rel(sourceDir, currentPath)
+					fmt.Printf("\rACL同期進捗: %.1f%% (%d/%d) - %s", percentage, current, total, relPath)
+				}
+			}
+		}
+
+		// ACL同期の実行
+		err := permissions.CopyDirectoryTreePermissionsWithProgress(sourceDir, destDir, progressCallback)
+		if err != nil {
+			log.Warn("ACL同期エラー: %v", err)
+			// ACL同期エラーは警告として記録するが、コピー処理は成功とする
+		} else {
+			log.Info("ACL同期が完了しました")
+		}
+
+		if !noProgress {
+			fmt.Println() // 改行
+		}
+	}
+
+	// 管理者権限で実行された場合、ウィンドウを閉じないようにする
+	if permissions.IsWindows() && permissions.IsAdmin() {
+		fmt.Println("\n=== 管理者権限での実行が完了しました ===")
+		fmt.Println("このウィンドウは自動で閉じません。")
+		fmt.Println("結果を確認後、手動で閉じてください。")
+		fmt.Println("Enterキーを押すとウィンドウが閉じます...")
+
+		// ユーザーの入力を待つ
+		var input string
+		fmt.Scanln(&input)
+	}
 
 	return nil
 }

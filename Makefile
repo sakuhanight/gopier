@@ -97,6 +97,30 @@ test:
 	@echo "統合テスト実行中..."
 	@go test -v ./tests/... && echo "統合テスト成功" || (echo "統合テスト失敗"; exit 1)
 
+# 短時間テスト（管理者権限不要）
+.PHONY: test-short
+test-short:
+	@echo "短時間テスト実行中（管理者権限不要）..."
+	@go test -v -short ./internal/permissions/... && echo "短時間テスト成功" || (echo "短時間テスト失敗"; exit 1)
+
+# 管理者権限テスト
+.PHONY: test-admin
+test-admin:
+	@echo "管理者権限テスト実行中..."
+	@if [ "$$(go env GOOS)" = "windows" ]; then \
+		echo "Windows環境で管理者権限テストを実行します..."; \
+		go test -v -run "WithAdmin" ./internal/permissions/... && echo "管理者権限テスト成功" || (echo "管理者権限テスト失敗"; exit 1); \
+	else \
+		echo "管理者権限テストはWindowsでのみ実行可能です"; \
+		exit 0; \
+	fi
+
+# 権限関連テスト（管理者権限が必要な場合がある）
+.PHONY: test-permissions
+test-permissions:
+	@echo "権限関連テスト実行中..."
+	@go test -v ./internal/permissions/... && echo "権限関連テスト成功" || (echo "権限関連テスト失敗"; exit 1)
+
 # CI用テスト（並列実行）
 .PHONY: test-ci
 test-ci:
@@ -186,6 +210,9 @@ help:
 	@echo "  release      - リリースビルド（最適化）"
 	@echo "  cross-build  - クロスプラットフォームビルド"
 	@echo "  test         - テスト実行"
+	@echo "  test-short   - 短時間テスト（管理者権限不要）"
+	@echo "  test-admin   - 管理者権限テスト（Windowsのみ）"
+	@echo "  test-permissions - 権限関連テスト"
 	@echo "  test-ci      - CI用テスト（並列実行）"
 	@echo "  test-fast    - 高速テスト（タイムアウト短縮）"
 	@echo "  test-coverage- テストカバレッジ"

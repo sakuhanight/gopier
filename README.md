@@ -149,6 +149,8 @@ verify_hash: true
 - `-n, --dry-run`: ドライラン
 - `-v, --verbose`: 詳細ログ
 - `-p, --preserve-permissions`: ファイルアクセス権限を保持（Windowsのみ）
+- `--auto-elevate`: 管理者権限が必要な場合に自動的にUACダイアログを表示（Windowsのみ）
+- `--no-elevate`: 管理者権限が必要な場合でもUACダイアログを表示しない（Windowsのみ）
 - `--verify-only`: コピーせず検証のみ
 - `--verify-changed`: 同期したファイルのみ検証
 - `--verify-all`: すべてのファイルを検証
@@ -168,6 +170,74 @@ verify_hash: true
   ```sh
   ./gopier -s ./src -d ./dst --verbose
   ```
+
+### Windows固有機能
+
+#### 権限コピーとUAC権限昇格
+
+Windowsでは、`--preserve-permissions`オプションを使用してファイルアクセス権限（ACL）をコピーできます。この機能には管理者権限が必要です。
+
+**権限昇格オプション:**
+- **自動権限昇格**: `--auto-elevate`オプションで管理者権限が必要な場合に自動的にUACダイアログを表示
+- **手動確認**: デフォルトでは権限昇格前にユーザーの確認を求める
+- **権限昇格無効化**: `--no-elevate`オプションで権限昇格を無効化
+
+**使用例:**
+```sh
+# 自動権限昇格で権限をコピー
+./gopier -s ./src -d ./dst --preserve-permissions --auto-elevate
+
+# 手動確認で権限をコピー（デフォルト）
+./gopier -s ./src -d ./dst --preserve-permissions
+
+# 権限昇格を無効化（管理者権限で実行する必要がある）
+./gopier -s ./src -d ./dst --preserve-permissions --no-elevate
+```
+
+**注意事項:**
+- UAC権限昇格はWindowsでのみサポートされています
+- 権限昇格が成功すると、新しいプロセスが管理者権限で開始されます
+- 権限コピーはファイルとディレクトリの両方に適用されます
+
+---
+
+## テスト
+
+### テストの分離
+
+管理者権限が必要なテストとそうでないテストを分離して実行できます：
+
+```bash
+# 短時間テスト（管理者権限不要）
+make test-short
+
+# 管理者権限テスト（Windowsのみ、管理者権限が必要）
+make test-admin
+
+# 権限関連テスト（管理者権限が必要な場合がある）
+make test-permissions
+
+# すべてのテスト
+make test
+```
+
+### PowerShellスクリプトでのテスト実行
+
+Windowsでは、PowerShellスクリプトを使用してテストを実行することもできます：
+
+```powershell
+# 短時間テスト
+.\scripts\run_tests.ps1 -Short
+
+# 管理者権限テスト
+.\scripts\run_tests.ps1 -Admin
+
+# すべてのテスト
+.\scripts\run_tests.ps1 -All
+
+# ヘルプ表示
+.\scripts\run_tests.ps1 -Help
+```
 
 ---
 
@@ -206,6 +276,45 @@ verify_hash: true
 
 # データベースのリセット（初期同期モード用）
 ./gopier db reset --db sync_state.db
+```
+
+---
+
+## 権限コピー機能（Windows専用）
+
+`--preserve-permissions`オプションを使用することで、ファイルとディレクトリのACL（アクセス制御リスト）を保持します。Windowsでのみサポートされています。
+
+### 使用方法
+
+```sh
+# 権限を保持してコピー
+./gopier -s ./source -d ./destination --preserve-permissions
+
+# 詳細ログ付きで権限を保持してコピー
+./gopier -s ./source -d ./destination --preserve-permissions -v
+```
+
+### 機能
+
+- **個別権限コピー**: 各ファイルとディレクトリのコピー時に権限を即座にコピー
+- **再帰的ACL同期**: コピー完了後にすべてのファイルとディレクトリのACLを再帰的に同期
+- **進捗表示**: ACL同期処理中のファイルと進捗率を表示
+- **エラーハンドリング**: 個別のファイルでエラーが発生しても処理を継続
+- **詳細ログ**: 各ファイルのACL同期状況を詳細にログ出力
+
+### 動作
+
+1. **ファイルコピー時**: 各ファイルのコピー完了後に即座に権限をコピー
+2. **ディレクトリ作成時**: 各ディレクトリの作成後に即座に権限をコピー
+3. **最終ACL同期**: すべてのコピー完了後に、ソースと宛先の全ファイル・ディレクトリのACLを再帰的に同期
+
+### 注意事項
+
+- Windowsでのみ動作します
+- 管理者権限が必要な場合があります
+- ソースと宛先のディレクトリ構造が一致している必要があります
+- 存在しない宛先ファイルはスキップされます
+- ACL同期エラーが発生しても、ファイルコピー処理は成功として扱われます
 ```
 
 #### 利用可能なサブコマンド
