@@ -266,14 +266,9 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 	// デバッグ出力
 	fmt.Fprintf(os.Stderr, "DEBUG: args=%v, TESTING=%s, os.Args=%v\n", args, os.Getenv("TESTING"), os.Args)
 
-	// ヘルプ表示の確認
-	if len(args) == 0 {
-		// テスト環境ではヘルプ表示をスキップして正常終了
-		if os.Getenv("TESTING") == "1" {
-			fmt.Fprintf(os.Stderr, "DEBUG: テスト環境で空引数、ヘルプ表示をスキップ\n")
-			return nil
-		}
-		fmt.Fprintf(os.Stderr, "DEBUG: 通常環境で空引数、ヘルプ表示\n")
+	// ヘルプ表示の確認（フラグが指定されていない場合のみ）
+	helpFlag, _ := cmd.Flags().GetBool("help")
+	if helpFlag {
 		return cmd.Help()
 	}
 
