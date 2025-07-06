@@ -132,7 +132,9 @@ jobs:
       - name: Install dependencies
         run: |
           Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
-          go mod download
+          # 依存関係を強制的にダウンロード
+          go mod download -x
+          go mod verify
         shell: powershell
 
       - name: Setup test environment
@@ -145,21 +147,37 @@ jobs:
         run: |
           Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
           Write-Host "Building for testing..."
+          Write-Host "Current directory: $(Get-Location)"
+          Write-Host "Go version: $(go version)"
+          Write-Host "Go modules: $(go list -m all | Select-Object -First 5)"
+          
           $env:GOGC = "200"
           $env:GOMEMLIMIT = "256MiB"
           $env:GOMAXPROCS = "2"
           $env:CGO_ENABLED = "0"
           
-          go build -o gopier.exe
+          # ビルドを試行
+          go build -v -o gopier.exe
+          $buildExitCode = $LASTEXITCODE
+          
+          if ($buildExitCode -ne 0) {
+              Write-Host "Build failed with exit code: $buildExitCode"
+              Write-Host "Trying to list files in current directory:"
+              Get-ChildItem -Force
+              Write-Host "Trying to list go.mod and go.sum:"
+              if (Test-Path "go.mod") { Get-Content "go.mod" | Select-Object -First 10 }
+              if (Test-Path "go.sum") { Write-Host "go.sum exists" } else { Write-Host "go.sum not found" }
+              exit $buildExitCode
+          }
           
           if (Test-Path "gopier.exe") {
               Write-Host "✓ Build successful"
           } else {
-              Write-Host "✗ Build failed"
+              Write-Host "✗ Build failed: gopier.exe not found"
               exit 1
           }
         shell: powershell
-        timeout-minutes: 5
+        timeout-minutes: 10
 
       - name: Run unit tests
         run: |
