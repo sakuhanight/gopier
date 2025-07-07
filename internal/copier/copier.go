@@ -90,6 +90,7 @@ type FileCopier struct {
 	// エラー伝播用
 	errOnce       sync.Once
 	firstErr     error
+	fileList     []database.FileInfo
 }
 
 // NewFileCopier は新しいFileCopierを作成する
@@ -117,6 +118,13 @@ func NewFileCopier(sourceDir, destDir string, options Options, fileFilter *filte
 		cancel:       cancel,
 		semaphore:    semaphore,
 	}
+}
+
+// NewFileCopierWithList はファイルリスト指定型のFileCopierを作成する
+func NewFileCopierWithList(sourceDir, destDir string, options Options, fileFilter *filter.Filter, syncDB *database.SyncDB, log *logger.Logger, fileList []database.FileInfo) *FileCopier {
+	fc := NewFileCopier(sourceDir, destDir, options, fileFilter, syncDB, log)
+	fc.fileList = fileList
+	return fc
 }
 
 // SetProgressCallback は進捗報告のコールバック関数を設定する
@@ -182,6 +190,27 @@ func (fc *FileCopier) CopyFiles() error {
 		}
 		fc.stats.IncrementFailed()
 		return fmt.Errorf("ソースディレクトリ(%s)の確認エラー: %w", fc.sourceDir, err)
+	}
+
+	if len(fc.fileList) > 0 {
+		// fileListが指定されている場合、そのリストのみ同期
+		total := int64(len(fc.fileList))
+		for i, file := range fc.fileList {
+			relPath := file.Path
+			sourcePath := filepath.Join(fc.sourceDir, relPath)
+			destPath := filepath.Join(fc.destDir, relPath)
+			if fc.progressFunc != nil {
+				fc.progressFunc(int64(i+1), total, relPath)
+			}
+			if err := fc.copyFile(sourcePath, destPath); err != nil {
+				fc.stats.IncrementFailed()
+				if fc.logger != nil {
+					fc.logger.Error("ファイルコピー失敗: %s (%v)", relPath, err)
+				}
+				continue
+			}
+		}
+		return nil
 	}
 
 	// ソースがディレクトリの場合

@@ -325,6 +325,49 @@ Windowsでは、PowerShellスクリプトを使用してテストを実行する
 ./gopier db reset --db sync_state.db
 ```
 
+### データベースに未同期ファイルを事前登録する
+
+`gopier db scan` コマンドを使うと、指定ディレクトリ配下のファイル一覧を再帰的に取得し、同期データベースに「未同期(pending)」として登録できます。
+
+### 使い方
+
+```
+gopier db scan --db <データベースパス> --source <スキャン対象ディレクトリ> [--include <パターン>] [--exclude <パターン>] [--recursive]
+```
+
+#### 主なオプション
+- `--db` : データベースファイルのパス（例: sync_state.db）
+- `--source` : スキャン対象ディレクトリ
+- `--include` : 含めるファイルパターン（例: *.txt,*.docx）
+- `--exclude` : 除外するファイルパターン（例: *.tmp,*.bak）
+- `--recursive` : サブディレクトリも再帰的にスキャン（デフォルト: true）
+
+#### 例
+```
+gopier db scan --db sync_state.db --source ./data --include "*.txt,*.md" --exclude "*.bak" --recursive
+```
+
+このコマンドで登録されたファイルは、DB上で「pending」状態となり、未同期ファイルのみを対象とした同期処理などに活用できます。
+
+---
+
+## 未同期ファイルのみ同期する
+
+`--pending-only` オプションを使うと、DB上で未同期(pending)状態のファイルのみを同期対象にできます。
+
+### 使い方
+
+```
+gopier --db <データベースパス> --source <コピー元> --destination <コピー先> --pending-only
+```
+
+#### 例
+```
+gopier --db sync_state.db --source ./data --destination ./backup --pending-only
+```
+
+このオプションにより、事前に `gopier db scan` で登録した未同期ファイルのみを効率的に同期できます。
+
 ---
 
 ## 権限コピー機能（Windows専用）

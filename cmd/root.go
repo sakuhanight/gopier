@@ -69,6 +69,7 @@ var (
 	preservePermissions bool
 	noConfirm           bool
 	timeout             string
+	pendingOnly         bool
 
 	// 同期モード関連
 	syncMode      string
@@ -171,6 +172,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.Flags().Bool("no-elevate", false, "管理者権限が必要な場合でもUACダイアログを表示しない（Windowsのみ）")
 	rootCmd.Flags().BoolVarP(&noConfirm, "no-confirm", "y", false, "確認を省略してコピーを実行")
 	rootCmd.Flags().StringVarP(&timeout, "timeout", "t", "", "タイムアウト時間（例: 30s, 5m, 2h）")
+	rootCmd.Flags().BoolVar(&pendingOnly, "pending-only", false, "未同期(pending)ファイルのみ同期する")
 
 	// 同期モード関連のフラグ
 	rootCmd.Flags().StringVarP(&syncMode, "mode", "", "normal", "同期モード (initial:初期同期, incremental:追加同期)")
@@ -234,7 +236,86 @@ func newRootCmd() *cobra.Command {
 	}
 	resetCmd.Flags().BoolP("no-confirm", "", false, "確認なしで実行")
 
-	dbCmd.AddCommand(listCmd, statsCmd, exportCmd, cleanCmd, resetCmd)
+	scanCmd := &cobra.Command{
+		Use:   "scan",
+		Short: "ディレクトリ内のファイル一覧をDBに未同期として登録",
+		Long:  `指定ディレクトリ配下のファイル一覧を再帰的に取得し、DBに未同期(pending)として登録します。`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dbPath, _ := cmd.Flags().GetString("db")
+			source, _ := cmd.Flags().GetString("source")
+			include, _ := cmd.Flags().GetString("include")
+			exclude, _ := cmd.Flags().GetString("exclude")
+			recursive, _ := cmd.Flags().GetBool("recursive")
+
+			if dbPath == "" {
+				return fmt.Errorf("データベースパスが指定されていません (--db)")
+			}
+			if source == "" {
+				return fmt.Errorf("スキャン対象ディレクトリが指定されていません (--source)")
+			}
+
+			syncDB, err := database.NewSyncDB(dbPath, database.NormalSync)
+			if err != nil {
+				return fmt.Errorf("データベースのオープンに失敗: %w", err)
+			}
+			defer syncDB.Close()
+
+			fileFilter := filter.NewFilter(include, exclude)
+
+			var files []string
+			err = filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				relPath, _ := filepath.Rel(source, path)
+				if info.IsDir() {
+					if !recursive && path != source {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if fileFilter != nil && !fileFilter.ShouldInclude(path) {
+					return nil
+				}
+				files = append(files, relPath)
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("ディレクトリ走査エラー: %w", err)
+			}
+
+			count := 0
+			for _, relPath := range files {
+				absPath := filepath.Join(source, relPath)
+				info, err := os.Stat(absPath)
+				if err != nil {
+					continue
+				}
+				fileInfo := database.FileInfo{
+					Path:         relPath,
+					Size:         info.Size(),
+					ModTime:      info.ModTime(),
+					Status:       database.StatusPending,
+					FailCount:    0,
+					LastSyncTime: time.Time{},
+					LastError:    "",
+				}
+				err = syncDB.AddFile(fileInfo)
+				if err == nil {
+					count++
+				}
+			}
+			fmt.Printf("%d件のファイルを未同期(pending)としてDBに登録しました\n", count)
+			return nil
+		},
+	}
+	scanCmd.Flags().StringP("db", "", "", "データベースファイルのパス")
+	scanCmd.Flags().StringP("source", "", "", "スキャン対象ディレクトリ")
+	scanCmd.Flags().StringP("include", "", "", "含めるファイルパターン (例: *.txt,*.docx)")
+	scanCmd.Flags().StringP("exclude", "", "", "除外するファイルパターン (例: *.tmp,*.bak)")
+	scanCmd.Flags().BoolP("recursive", "R", true, "サブディレクトリを再帰的にスキャン")
+
+	dbCmd.AddCommand(listCmd, statsCmd, exportCmd, cleanCmd, resetCmd, scanCmd)
 	rootCmd.AddCommand(dbCmd)
 
 	return rootCmd
@@ -389,6 +470,19 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 		options.Mode = copier.ModeCopy
 	}
 
+	// pendingOnlyオプション対応
+	var fileList []database.FileInfo
+	if pendingOnly && syncDB != nil {
+		fileList, err = syncDB.GetFilesByStatus(database.StatusPending)
+		if err != nil {
+			return fmt.Errorf("DBからpendingファイル取得に失敗: %w", err)
+		}
+		if len(fileList) == 0 {
+			fmt.Println("未同期(pending)ファイルはありません")
+			return nil
+		}
+	}
+
 	// ドライランの場合
 	if dryRun {
 		log.Info("ドライランモード: 実際のコピーは実行されません")
@@ -409,35 +503,25 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("タイムアウト設定エラー: %w", err)
 	}
 
-	// ファイルコピーの実行
-	fileCopier := copier.NewFileCopier(sourceDir, destDir, options, fileFilter, syncDB, log)
-
-	// タイムアウトが設定されている場合、コンテキストにタイムアウトを追加
-	if timeoutDuration > 0 {
-		log.Info("タイムアウト設定: %v", timeoutDuration)
-		fileCopier.SetTimeout(timeoutDuration)
+	// FileCopierの生成
+	var fileCopier *copier.FileCopier
+	if pendingOnly && syncDB != nil {
+		fileCopier = copier.NewFileCopierWithList(sourceDir, destDir, options, fileFilter, syncDB, log, fileList)
+	} else {
+		fileCopier = copier.NewFileCopier(sourceDir, destDir, options, fileFilter, syncDB, log)
 	}
+	fileCopier.SetProgressCallback(func(current, total int64, currentFile string) {
+		if !noProgress {
+			fmt.Printf("\r進捗: %d/%d %s", current, total, currentFile)
+		}
+	})
 
-	// 進捗表示の設定
+	// コピー実行
+	if err := fileCopier.CopyFiles(); err != nil {
+		return fmt.Errorf("ファイルコピーに失敗: %w", err)
+	}
 	if !noProgress {
-		fileCopier.SetProgressCallback(func(current, total int64, currentFile string) {
-			if total > 0 {
-				percentage := float64(current) / float64(total) * 100
-				fmt.Printf("\r進捗: %.1f%% (%d/%d) - %s", percentage, current, total, currentFile)
-			}
-		})
-	}
-
-	// コピー処理の実行
-	log.Info("ファイルコピーを開始します")
-	log.Info("ソース: %s", sourceDir)
-	log.Info("宛先: %s", destDir)
-	log.Info("権限コピー: %v", preservePermissions)
-
-	err = fileCopier.CopyFiles()
-	if err != nil {
-		log.Error("ファイルコピーエラー: %v", err)
-		return fmt.Errorf("ファイルコピーエラー: %w", err)
+		fmt.Println()
 	}
 
 	// 統計情報の表示
@@ -452,20 +536,8 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 	if preservePermissions && permissions.IsWindows() {
 		log.Info("ACL同期を開始します")
 
-		// 進捗表示の設定
-		var progressCallback func(current, total int, currentPath string)
-		if !noProgress {
-			progressCallback = func(current, total int, currentPath string) {
-				if total > 0 {
-					percentage := float64(current) / float64(total) * 100
-					relPath, _ := filepath.Rel(sourceDir, currentPath)
-					fmt.Printf("\rACL同期進捗: %.1f%% (%d/%d) - %s", percentage, current, total, relPath)
-				}
-			}
-		}
-
 		// ACL同期の実行
-		err := permissions.CopyDirectoryTreePermissionsWithProgress(sourceDir, destDir, progressCallback)
+		err := permissions.CopyDirectoryTreePermissionsWithProgress(sourceDir, destDir, nil)
 		if err != nil {
 			log.Warn("ACL同期エラー: %v", err)
 			// ACL同期エラーは警告として記録するが、コピー処理は成功とする
@@ -619,6 +691,7 @@ func loadConfig(cmd *cobra.Command) {
 			Verbose:             false,
 			SkipNewer:           false,
 			NoProgress:          false,
+			NoConfirm:           false,
 			PreserveModTime:     true,
 			PreservePermissions: false,
 			OverwriteExisting:   true,
