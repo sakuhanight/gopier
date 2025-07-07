@@ -49,6 +49,7 @@ type Options struct {
 	ProgressInterval    time.Duration // 進捗報告の間隔
 	MaxConcurrent       int           // 最大並行コピー数
 	Mode                CopyMode      // コピーモード
+	TestCopyDelayPerByte time.Duration // テスト用: 1バイトごとにSleepする遅延
 }
 
 // DefaultOptions はデフォルトのオプションを返す
@@ -86,6 +87,9 @@ type FileCopier struct {
 	semaphore    chan struct{}
 	ctx          context.Context
 	cancel       context.CancelFunc
+	// エラー伝播用
+	errOnce       sync.Once
+	firstErr     error
 }
 
 // NewFileCopier は新しいFileCopierを作成する
@@ -267,6 +271,9 @@ func (fc *FileCopier) CopyFiles() error {
 		}
 	}
 
+	if fc.firstErr != nil {
+		return fc.firstErr
+	}
 	return err
 }
 
@@ -445,6 +452,8 @@ func (fc *FileCopier) copyDirectory(sourceDir, destDir string) error {
 					relPath, _ := filepath.Rel(fc.sourceDir, src)
 					fc.logger.Error("ファイルコピーエラー: %s", relPath)
 				}
+				// エラーをfirstErrに記録
+				fc.errOnce.Do(func() { fc.firstErr = err })
 			}
 		}(sourcePath, destPath)
 	}
@@ -457,6 +466,7 @@ func (fc *FileCopier) copyFile(sourcePath, destPath string) error {
 	// コンテキストのキャンセル確認
 	select {
 	case <-fc.ctx.Done():
+		fmt.Println("CANCELLED") // contextキャンセル時のデバッグ出力
 		return fmt.Errorf("コピー処理がキャンセルされました")
 	default:
 	}
@@ -745,7 +755,6 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 	// ソースファイルを開く
 	sourceFile, err := os.Open(sourcePath)
 	if err != nil {
-		// loggerでエラー出力
 		if fc.logger != nil && fc.logger.Verbose {
 			fc.logger.Error("ソースファイル(%s)を開けません: %v", sourcePath, err)
 		}
@@ -756,7 +765,6 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 	// 宛先ファイルを作成
 	destFile, err := os.Create(destPath)
 	if err != nil {
-		// loggerでエラー出力
 		if fc.logger != nil && fc.logger.Verbose {
 			fc.logger.Error("宛先ファイル(%s)を作成できません: %v", destPath, err)
 		}
@@ -764,40 +772,70 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 	}
 	defer destFile.Close()
 
-	// バッファを作成
 	buffer := make([]byte, fc.options.BufferSize)
-
-	// ファイルをコピー
-	copiedBytes, err := io.CopyBuffer(destFile, sourceFile, buffer)
-	if err != nil {
-		// loggerでエラー出力
-		if fc.logger != nil && fc.logger.Verbose {
-			fc.logger.Error("ファイルコピーエラー: %s -> %s: %v", sourcePath, destPath, err)
+	var copiedBytes int64
+	for {
+		// contextキャンセル監視
+		select {
+		case <-fc.ctx.Done():
+			fmt.Println("CANCELLED") // contextキャンセル時のデバッグ出力
+			return fmt.Errorf("コピー処理がキャンセルされました")
+		default:
 		}
-		return fmt.Errorf("ファイルコピーエラー: %w", err)
+
+		n, readErr := sourceFile.Read(buffer)
+		if n > 0 {
+			// テスト用: 1バイトごとに遅延
+			if fc.options.TestCopyDelayPerByte > 0 {
+				for i := 0; i < n; i++ {
+					select {
+					case <-fc.ctx.Done():
+						fmt.Println("CANCELLED") // contextキャンセル時のデバッグ出力
+						return fmt.Errorf("コピー処理がキャンセルされました")
+					default:
+						fmt.Print(".") // デバッグ出力
+						time.Sleep(fc.options.TestCopyDelayPerByte)
+					}
+				}
+			}
+			wn, writeErr := destFile.Write(buffer[:n])
+			if writeErr != nil {
+				if fc.logger != nil && fc.logger.Verbose {
+					fc.logger.Error("ファイル書き込みエラー: %s -> %s: %v", sourcePath, destPath, writeErr)
+				}
+				return fmt.Errorf("ファイル書き込みエラー: %w", writeErr)
+			}
+			if wn != n {
+				return fmt.Errorf("書き込まれたバイト数が一致しません: 期待値=%d, 実際=%d", n, wn)
+			}
+			copiedBytes += int64(wn)
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			if fc.logger != nil && fc.logger.Verbose {
+				fc.logger.Error("ファイル読み取りエラー: %s: %v", sourcePath, readErr)
+			}
+			return fmt.Errorf("ファイル読み取りエラー: %w", readErr)
+		}
 	}
 
-	// コピーされたバイト数の確認
 	if copiedBytes != sourceInfo.Size() {
-		// loggerで警告出力
 		if fc.logger != nil && fc.logger.Verbose {
 			fc.logger.Warn("コピーされたバイト数が一致しません: 期待値=%d, 実際=%d", sourceInfo.Size(), copiedBytes)
 		}
 	}
 
-	// ファイルを閉じる（エラーチェック付き）
 	if err = destFile.Close(); err != nil {
-		// loggerでエラー出力
 		if fc.logger != nil && fc.logger.Verbose {
 			fc.logger.Error("宛先ファイル(%s)を閉じられません: %v", destPath, err)
 		}
 		return fmt.Errorf("宛先ファイル(%s)を閉じられません: %w", destPath, err)
 	}
 
-	// 更新日時の保持
 	if fc.options.PreserveModTime {
 		if err = os.Chtimes(destPath, time.Now(), sourceInfo.ModTime()); err != nil {
-			// loggerでエラー出力
 			if fc.logger != nil && fc.logger.Verbose {
 				fc.logger.Error("更新日時の設定エラー: %s: %v", destPath, err)
 			}
@@ -805,7 +843,6 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 		}
 	}
 
-	// ファイルアクセス権限の保持（Windowsのみ）
 	if fc.options.PreservePermissions {
 		if permissions.CanCopyPermissions() {
 			fmt.Printf("DEBUG: Attempting to copy file permissions: %s -> %s\n", sourcePath, destPath)
@@ -813,7 +850,6 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 			err = permissions.CopyFilePermissions(sourcePath, destPath)
 			if err != nil {
 				if errors.Is(err, permissions.ErrDACLOnlyCopied) {
-					// DACLのみコピーの場合、DBに記録
 					if fc.db != nil {
 						relPath, _ := filepath.Rel(fc.destDir, destPath)
 						fileInfo := database.FileInfo{
@@ -828,10 +864,8 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 						relPath, _ := filepath.Rel(fc.destDir, destPath)
 						fc.logger.Info("DACLのみコピー: %s", relPath)
 					}
-					// エラー扱いにはしない
 					err = nil
 				} else {
-					// 詳細なエラー情報をログに記録
 					if fc.logger != nil {
 						if fc.logger.Verbose {
 							fc.logger.Warn("ファイル権限のコピーエラー: %s -> %s: %v", sourcePath, destPath, err)
@@ -840,7 +874,6 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 						}
 					}
 
-					// エラーの種類に応じた詳細情報を出力
 					errMsg := err.Error()
 					if strings.Contains(errMsg, "アクセス拒否") {
 						fmt.Printf("ERROR: アクセス拒否エラー - 管理者権限が必要です: %s\n", destPath)
@@ -855,11 +888,9 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 						fmt.Printf("ERROR: 権限コピーエラー: %s -> %s: %v\n", sourcePath, destPath, err)
 					}
 
-					// 権限コピーエラーは警告として記録するが、コピー処理は続行
 					fmt.Printf("INFO: ファイル権限コピーに失敗しましたが、ファイルコピー処理は継続します\n")
 				}
 			} else {
-				// loggerで成功情報を出力
 				if fc.logger != nil {
 					if fc.logger.Verbose {
 						fc.logger.Info("ファイル権限をコピーしました: %s", destPath)
@@ -870,7 +901,6 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 				fmt.Printf("DEBUG: Successfully copied file permissions: %s\n", destPath)
 			}
 		} else {
-			// loggerで警告出力
 			if fc.logger != nil {
 				if fc.logger.Verbose {
 					fc.logger.Warn("ファイル権限のコピーは現在のプラットフォームではサポートされていません")
