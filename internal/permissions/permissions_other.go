@@ -4,9 +4,13 @@
 package permissions
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 )
+
+// DACLのみコピーされた場合のエラー(Dummy)
+var ErrDACLOnlyCopied = errors.New("DACL copy is only supported on Windows")
 
 // CopyFilePermissions copies file permissions from source to destination
 // This is a dummy implementation for non-Windows platforms
