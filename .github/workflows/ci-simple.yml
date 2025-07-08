@@ -5,6 +5,7 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,9 +26,9 @@ jobs:
   test-linux:
     strategy:
       matrix:
-        go-version: ['1.23']
+        go-version: ['1.24.4']
         include:
-          - go-version: '1.23'
+          - go-version: '1.24.4'
             coverage-flag: 'unittests'
     runs-on: [self-hosted, Linux]
     timeout-minutes: 25
@@ -85,9 +86,9 @@ jobs:
   test-windows:
     strategy:
       matrix:
-        go-version: ['1.23']
+        go-version: ['1.24.4']
         include:
-          - go-version: '1.23'
+          - go-version: '1.24.4'
             coverage-flag: 'unittests'
     runs-on: [self-hosted, Windows]
     timeout-minutes: 35
@@ -321,7 +322,7 @@ jobs:
     strategy:
       matrix:
         platform: [Linux, Windows]
-        go-version: ['1.23']
+        go-version: ['1.24.4']
     runs-on: ${{ matrix.platform == 'Linux' && 'self-hosted, Linux' || 'self-hosted, Windows' }}
     timeout-minutes: 30
     if: github.ref == 'refs/heads/develop'
@@ -402,9 +403,9 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-1.21-${{ hashFiles('go.mod', 'go.sum') }}
+          key: ${{ runner.os }}-go-1.24.4-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-1.21-
+            ${{ runner.os }}-go-1.24.4-
             ${{ runner.os }}-go-
 
       - name: Setup build environment
