@@ -473,6 +473,7 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 	// pendingOnlyオプション対応
 	var fileList []database.FileInfo
 	if pendingOnly && syncDB != nil {
+		var err error
 		fileList, err = syncDB.GetFilesByStatus(database.StatusPending)
 		if err != nil {
 			return fmt.Errorf("DBからpendingファイル取得に失敗: %w", err)
@@ -498,9 +499,13 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	// タイムアウトの解析
-	timeoutDuration, err := parseTimeout(timeout)
-	if err != nil {
-		return fmt.Errorf("タイムアウト設定エラー: %w", err)
+	if timeout != "" {
+		timeoutDuration, err := parseTimeout(timeout)
+		if err != nil {
+			return fmt.Errorf("タイムアウト設定エラー: %w", err)
+		}
+		// TODO: タイムアウト機能の実装
+		_ = timeoutDuration
 	}
 
 	// FileCopierの生成
