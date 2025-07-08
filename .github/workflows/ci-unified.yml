@@ -270,7 +270,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24.4'
           cache: true
 
       - name: Cache Go modules
@@ -280,9 +280,9 @@ jobs:
             $env:GOCACHE
             $env:GOMODCACHE
             $env:GOPATH/pkg/mod
-          key: ${{ runner.os }}-go-1.23-${{ hashFiles('go.mod', 'go.sum') }}
+          key: ${{ runner.os }}-go-1.24.4-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-1.23-
+            ${{ runner.os }}-go-1.24.4-
             ${{ runner.os }}-go-
 
       - name: Install dependencies
@@ -350,7 +350,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24.4'
 
       - name: Run security scan
         run: |
@@ -373,7 +373,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24.4'
 
       - name: Install golangci-lint
         run: |
@@ -411,7 +411,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24.4'
           cache: true
 
       - name: Cache Go modules
@@ -420,9 +420,9 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-1.23-${{ hashFiles('go.mod', 'go.sum') }}
+          key: ${{ runner.os }}-go-1.24.4-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-1.23-
+            ${{ runner.os }}-go-1.24.4-
             ${{ runner.os }}-go-
 
       - name: Setup build environment

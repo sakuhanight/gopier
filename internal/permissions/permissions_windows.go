@@ -64,7 +64,8 @@ type SecurityDescriptor struct {
 	Dacl     *ACL
 }
 
-var ErrDACLOnlyCopied = errors.New("DACL_ONLY_COPIED")
+// DACLのみコピーされた場合のエラー
+var ErrDACLOnlyCopied = errors.New("DACLのみコピーされました")
 
 // getWindowsErrorDescription returns a detailed description of Windows API errors
 func getWindowsErrorDescription(err error) string {

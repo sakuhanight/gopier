@@ -40,7 +40,7 @@ import (
 	"github.com/sakuhanight/gopier/internal/permissions"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 )
 
 var (
