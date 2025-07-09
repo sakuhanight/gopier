@@ -116,25 +116,73 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Debug Go environment
+        run: |
+          Write-Host "=== Go Environment Debug ==="
+          Write-Host "Go version: $(go version)"
+          Write-Host "GOCACHE: $env:GOCACHE"
+          Write-Host "GOMODCACHE: $env:GOMODCACHE"
+          Write-Host "GOPATH: $env:GOPATH"
+          Write-Host "Current directory: $(Get-Location)"
+          Write-Host "============================="
+        shell: powershell
+
       - name: Cache Go modules (Windows)
         if: runner.os == 'Windows'
         uses: actions/cache@v4
         with:
           path: |
-            $env:GOCACHE
-            $env:GOMODCACHE
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
+            ${{ env.GOCACHE }}
+            ${{ env.GOMODCACHE }}
+            ${{ env.GOPATH }}/pkg/mod
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ matrix.go-version }}-
             ${{ runner.os }}-go-
         continue-on-error: true
 
+      - name: Debug cache status
+        run: |
+          Write-Host "=== Cache Status Debug ==="
+          Write-Host "GOCACHE exists: $(Test-Path $env:GOCACHE)"
+          Write-Host "GOMODCACHE exists: $(Test-Path $env:GOMODCACHE)"
+          Write-Host "GOPATH/pkg/mod exists: $(Test-Path '$env:GOPATH/pkg/mod')"
+          if (Test-Path $env:GOCACHE) {
+              Write-Host "GOCACHE contents:"
+              Get-ChildItem $env:GOCACHE | Select-Object -First 5
+          }
+          if (Test-Path $env:GOMODCACHE) {
+              Write-Host "GOMODCACHE contents:"
+              Get-ChildItem $env:GOMODCACHE | Select-Object -First 5
+          }
+          Write-Host "=========================="
+        shell: powershell
+
       - name: Install dependencies
         run: |
           Set-Location "${{ github.run_id }}-${{ github.job }}-${{ matrix.go-version }}"
           # Force download dependencies
+          Write-Host "=== Installing Dependencies ==="
+          Write-Host "Current directory: $(Get-Location)"
+          Write-Host "go.mod exists: $(Test-Path 'go.mod')"
+          Write-Host "go.sum exists: $(Test-Path 'go.sum')"
+          
+          # Check if modules are already cached
+          Write-Host "Checking cached modules..."
+          $cachedModules = go list -m all 2>$null
+          if ($cachedModules) {
+              Write-Host "Found cached modules:"
+              $cachedModules | Select-Object -First 3
+          } else {
+              Write-Host "No cached modules found"
+          }
+          
           Write-Host "Downloading Go modules..."
+          $startTime = Get-Date
           go mod download -x
+          $downloadTime = (Get-Date) - $startTime
+          Write-Host "Download completed in: $($downloadTime.TotalSeconds) seconds"
+          
           if ($LASTEXITCODE -ne 0) {
               Write-Host "go mod download failed, trying without cache..."
               $env:GOPROXY = "direct"
@@ -142,6 +190,7 @@ jobs:
           }
           Write-Host "Verifying Go modules..."
           go mod verify
+          Write-Host "=== Dependencies Installation Complete ==="
         shell: powershell
 
       - name: Setup test environment
