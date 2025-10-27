@@ -2,6 +2,10 @@ codecov:
   require_ci_to_pass: yes
   notify:
     wait_for_ci: yes
+  comment:
+    layout: "reach,diff,flags,files,footer"
+    behavior: default
+    require_changes: no
 
 coverage:
   precision: 2
@@ -13,9 +17,17 @@ coverage:
         target: 80%
         threshold: 5%
         base: auto
+      develop:
+        target: 75%
+        threshold: 5%
+        base: auto
     patch:
       default:
         target: 80%
+        threshold: 5%
+        base: auto
+      develop:
+        target: 75%
         threshold: 5%
         base: auto
 
@@ -27,10 +39,21 @@ parsers:
       method: no
       macro: no
 
-comment:
-  layout: "reach,diff,flags,files,footer"
-  behavior: default
-  require_changes: no
+flags:
+  develop:
+    paths:
+      - internal/
+      - cmd/
+    flags:
+      - develop
+    carryforward: true
+  unittests:
+    paths:
+      - internal/
+      - cmd/
+    flags:
+      - unittests
+    carryforward: true
 
 ignore:
   - "cmd/root_test.go"

@@ -19,6 +19,7 @@ type Logger struct {
 	NoProgress bool
 	mu         sync.Mutex
 	lastLine   string
+	file       *os.File // ファイルハンドルを保持
 }
 
 // NewLogger は新しいロガーを作成する
@@ -58,6 +59,7 @@ func NewLogger(logFile string, verbose bool, showProgress bool) *Logger {
 	cores = append(cores, consoleCore)
 
 	// ファイル出力（指定されている場合）
+	var file *os.File
 	if logFile != "" {
 		// ディレクトリの作成
 		logDir := filepath.Dir(logFile)
@@ -65,7 +67,8 @@ func NewLogger(logFile string, verbose bool, showProgress bool) *Logger {
 			fmt.Fprintf(os.Stderr, "ログディレクトリの作成に失敗: %v\n", err)
 		} else {
 			// ファイルオープン
-			file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			var err error
+			file, err = os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "ログファイルのオープンに失敗: %v\n", err)
 			} else {
@@ -91,12 +94,19 @@ func NewLogger(logFile string, verbose bool, showProgress bool) *Logger {
 		sugar:      zapLogger.Sugar(),
 		Verbose:    verbose,
 		NoProgress: !showProgress,
+		file:       file,
 	}
 }
 
 // Close はロガーを閉じる
 func (l *Logger) Close() {
 	_ = l.zap.Sync()
+
+	// ファイルハンドルを明示的に閉じる
+	if l.file != nil {
+		l.file.Close()
+		l.file = nil
+	}
 }
 
 // Debug はデバッグレベルのログを出力する

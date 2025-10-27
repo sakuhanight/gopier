@@ -235,7 +235,18 @@ func (s *SyncDB) UpdateFileStatus(path string, status FileStatus, lastError stri
 				LastError:    lastError,
 				LastSyncTime: time.Now(),
 			}
-			return s.AddFile(fileInfo)
+
+			// 現在のトランザクション内で直接保存
+			newData, err := json.Marshal(fileInfo)
+			if err != nil {
+				return fmt.Errorf("ファイル情報のシリアライズエラー: %w", err)
+			}
+
+			if err := bucket.Put(key, newData); err != nil {
+				return fmt.Errorf("ファイル情報の保存エラー: %w", err)
+			}
+
+			return nil
 		}
 
 		// 既存のファイル情報を更新

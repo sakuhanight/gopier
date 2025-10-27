@@ -31,21 +31,34 @@ all: clean build
 build:
 	@echo "ビルド中..."
 	@VERSION=$${VERSION:-$$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}; \
-	BUILD_TIME=$$(date '+%Y-%m-%d %H:%M:%S'); \
-	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME'"; \
+	BUILD_TIME=$$(date '+%Y-%m-%d_%H-%M-%S'); \
+	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME"; \
 	echo "Version: $$VERSION"; \
 	echo "BuildTime: $$BUILD_TIME"; \
 	set -x; \
 	go build -ldflags "$$LDFLAGS" -o $(BINARY_NAME)
 	@echo "ビルド完了: $(BINARY_NAME)"
 
+# CI用通常ビルド
+.PHONY: build-ci
+build-ci:
+	@echo "CI用通常ビルド中..."
+	@VERSION=$${VERSION:-"ci-build"}; \
+	BUILD_TIME=$$(date '+%Y-%m-%d_%H-%M-%S'); \
+	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME"; \
+	echo "Version: $$VERSION"; \
+	echo "BuildTime: $$BUILD_TIME"; \
+	set -x; \
+	go build -ldflags "$$LDFLAGS" -o $(BINARY_NAME)
+	@echo "CI用通常ビルド完了: $(BINARY_NAME)"
+
 # リリースビルド（最適化）
 .PHONY: release
 release:
 	@echo "リリースビルド中..."
 	@VERSION=$${VERSION:-$$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}; \
-	BUILD_TIME=$$(date '+%Y-%m-%d %H:%M:%S'); \
-	LDFLAGS="-s -w -X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME'"; \
+	BUILD_TIME=$$(date '+%Y-%m-%d_%H-%M-%S'); \
+	LDFLAGS="-s -w -X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME"; \
 	echo "Version: $$VERSION"; \
 	echo "BuildTime: $$BUILD_TIME"; \
 	if [ "$$GOOS" = "windows" ]; then \
@@ -61,8 +74,8 @@ release:
 cross-build:
 	@echo "クロスプラットフォームビルド中..."
 	@VERSION=$${VERSION:-$$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}; \
-	BUILD_TIME=$$(date '+%Y-%m-%d %H:%M:%S'); \
-	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME'"; \
+	BUILD_TIME=$$(date '+%Y-%m-%d_%H-%M-%S'); \
+	LDFLAGS="-X github.com/sakuhanight/gopier/cmd.Version=$$VERSION -X github.com/sakuhanight/gopier/cmd.BuildTime=$$BUILD_TIME"; \
 	echo "Version: $$VERSION"; \
 	echo "BuildTime: $$BUILD_TIME"; \
 	$(MKDIR) $(BUILD_DIR); \
@@ -80,15 +93,83 @@ cross-build:
 .PHONY: test
 test:
 	@echo "テスト実行中..."
-	go test -v ./...
+	@go test -v ./... && echo "通常テスト成功" || (echo "通常テスト失敗"; exit 1)
+	@echo "統合テスト実行中..."
+	@go test -v ./tests/... && echo "統合テスト成功" || (echo "統合テスト失敗"; exit 1)
+
+# 短時間テスト（管理者権限不要）
+.PHONY: test-short
+test-short:
+	@echo "短時間テスト実行中（管理者権限不要）..."
+	@go test -v -short ./internal/permissions/... && echo "短時間テスト成功" || (echo "短時間テスト失敗"; exit 1)
+
+# 管理者権限テスト
+.PHONY: test-admin
+test-admin:
+	@echo "管理者権限テスト実行中..."
+	@if [ "$$(go env GOOS)" = "windows" ]; then \
+		echo "Windows環境で管理者権限テストを実行します..."; \
+		go test -v -run "WithAdmin" ./internal/permissions/... && echo "管理者権限テスト成功" || (echo "管理者権限テスト失敗"; exit 1); \
+	else \
+		echo "管理者権限テストはWindowsでのみ実行可能です"; \
+		exit 0; \
+	fi
+
+# 権限関連テスト（管理者権限が必要な場合がある）
+.PHONY: test-permissions
+test-permissions:
+	@echo "権限関連テスト実行中..."
+	@go test -v ./internal/permissions/... && echo "権限関連テスト成功" || (echo "権限関連テスト失敗"; exit 1)
+
+# CI用テスト（並列実行）
+.PHONY: test-ci
+test-ci:
+	@echo "CI用テスト実行中..."
+	@go test -v -parallel=4 -timeout=10m ./cmd/... ./internal/... && echo "ユニットテスト成功" || (echo "ユニットテスト失敗"; exit 1)
+	@go test -v -parallel=2 -timeout=10m ./tests/... && echo "統合テスト成功" || (echo "統合テスト失敗"; exit 1)
+
+# 高速テスト（タイムアウト短縮）
+.PHONY: test-fast
+test-fast:
+	@echo "高速テスト実行中..."
+	@go test -v -timeout=5m -parallel=4 ./cmd/... ./internal/... && echo "高速テスト成功" || (echo "高速テスト失敗"; exit 1)
+
+# テスト実行（タイムアウト付き）
+.PHONY: test-timeout
+test-timeout:
+	@echo "テスト実行中（タイムアウト60秒）..."
+	@if command -v gtimeout >/dev/null 2>&1; then \
+		gtimeout 60s go test -v ./...; \
+		echo "統合テスト実行中（タイムアウト60秒）..."; \
+		gtimeout 60s go test -v ./tests/...; \
+	elif command -v timeout >/dev/null 2>&1; then \
+		timeout 60s go test -v ./...; \
+		echo "統合テスト実行中（タイムアウト60秒）..."; \
+		timeout 60s go test -v ./tests/...; \
+	else \
+		echo "タイムアウトコマンドが見つかりません。通常のテストを実行します。"; \
+		go test -v ./...; \
+		echo "統合テスト実行中..."; \
+		go test -v ./tests/...; \
+	fi
 
 # テストカバレッジ
 .PHONY: test-coverage
 test-coverage:
 	@echo "テストカバレッジ実行中..."
-	go test -v -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out -o coverage.html
-	@echo "カバレッジレポート: coverage.html"
+	@if COVERAGE=1 go test -v -coverprofile=coverage.out ./cmd/... ./internal/...; then \
+		echo "テスト成功。カバレッジレポート生成中..."; \
+		if [ -f coverage.out ]; then \
+			go tool cover -html=coverage.out -o coverage.html 2>/dev/null || echo "HTMLレポート生成をスキップしました"; \
+			echo "カバレッジレポート: coverage.html"; \
+			go tool cover -func=coverage.out || echo "カバレッジ関数レポート生成をスキップしました"; \
+		else \
+			echo "カバレッジファイルが見つかりません"; \
+		fi; \
+	else \
+		echo "テストが失敗しました。カバレッジレポートは生成されません。"; \
+		exit 1; \
+	fi
 
 # 依存関係の整理
 .PHONY: tidy
@@ -129,6 +210,11 @@ help:
 	@echo "  release      - リリースビルド（最適化）"
 	@echo "  cross-build  - クロスプラットフォームビルド"
 	@echo "  test         - テスト実行"
+	@echo "  test-short   - 短時間テスト（管理者権限不要）"
+	@echo "  test-admin   - 管理者権限テスト（Windowsのみ）"
+	@echo "  test-permissions - 権限関連テスト"
+	@echo "  test-ci      - CI用テスト（並列実行）"
+	@echo "  test-fast    - 高速テスト（タイムアウト短縮）"
 	@echo "  test-coverage- テストカバレッジ"
 	@echo "  tidy         - 依存関係の整理"
 	@echo "  clean        - クリーンアップ"

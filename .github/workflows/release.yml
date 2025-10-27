@@ -4,10 +4,11 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -15,7 +16,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.24.4'
 
       # キャッシュは一時的に無効化（エラー回避のため）
       # - name: Cache Go modules
@@ -46,7 +47,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: self-hosted
     needs: test
     strategy:
       matrix:
@@ -75,7 +76,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.24.4'
 
       # キャッシュは一時的に無効化（エラー回避のため）
       # - name: Cache Go modules
@@ -91,14 +92,7 @@ jobs:
 
       - name: Build (Windows)
         if: matrix.os == 'windows-latest'
-        run: |
-          $env:GOOS = "windows"
-          $env:GOARCH = "${{ matrix.goarch }}"
-          $VERSION = "${{ github.ref_name }}"
-          $BUILD_TIME = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-          Write-Host "Building version: $VERSION"
-          Write-Host "Build time: $BUILD_TIME"
-          go build -ldflags="-s -w -X github.com/sakuhanight/gopier/cmd.Version=$VERSION -X 'github.com/sakuhanight/gopier/cmd.BuildTime=$BUILD_TIME'" -o gopier.exe .
+        run: pwsh build.ps1 release
         shell: pwsh
 
       - name: Build (Unix)

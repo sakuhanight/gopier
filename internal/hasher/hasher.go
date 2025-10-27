@@ -1,6 +1,7 @@
 package hasher
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Algorithm はハッシュアルゴリズムの種類を表す型
@@ -59,6 +61,11 @@ func (h *Hasher) getHasher() (hash.Hash, error) {
 
 // HashFile はファイルのハッシュ値を計算する
 func (h *Hasher) HashFile(filePath string) (string, error) {
+	return h.HashFileWithContext(context.Background(), filePath)
+}
+
+// HashFileWithContext はコンテキスト付きでファイルのハッシュ値を計算する
+func (h *Hasher) HashFileWithContext(ctx context.Context, filePath string) (string, error) {
 	// ファイルを開く
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -77,6 +84,13 @@ func (h *Hasher) HashFile(filePath string) (string, error) {
 
 	// ファイルを読み込んでハッシュを計算
 	for {
+		// コンテキストのキャンセルをチェック
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("ハッシュ計算がキャンセルされました: %w", ctx.Err())
+		default:
+		}
+
 		n, err := file.Read(buffer)
 		if err != nil && err != io.EOF {
 			return "", fmt.Errorf("ファイル読み込みエラー: %w", err)
@@ -87,6 +101,11 @@ func (h *Hasher) HashFile(filePath string) (string, error) {
 		}
 
 		hasher.Write(buffer[:n])
+
+		// テスト時のみ人工的な遅延
+		if os.Getenv("TESTING") == "1" {
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 
 	// ハッシュ値を16進数文字列に変換

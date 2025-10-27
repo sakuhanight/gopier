@@ -1,0 +1,42 @@
+{
+  "Build": {
+    "BinaryName": "gopier.exe",
+    "BuildDir": "build",
+    "EnableOptimization": true,
+    "EnableDebug": false,
+    "MemoryLimit": "512MiB",
+    "GarbageCollection": "50"
+  },
+  "Test": {
+    "EnableCoverage": true,
+    "CoverageOutput": "coverage.out",
+    "CoverageHTML": "coverage.html",
+    "TimeoutSeconds": 300,
+    "ParallelTests": true
+  },
+  "Log": {
+    "Level": "Info",
+    "EnableFileLog": true,
+    "LogDirectory": "logs",
+    "EnableColor": true,
+    "MaxLogFiles": 10
+  },
+  "Platform": {
+    "DefaultOS": "windows",
+    "DefaultArch": "amd64",
+    "SupportedOS": [
+      "windows",
+      "linux",
+      "darwin"
+    ],
+    "SupportedArch": [
+      "amd64",
+      "arm64"
+    ]
+  },
+  "Admin": {
+    "RequireElevation": true,
+    "AutoConfirm": false,
+    "LogAdminActions": true
+  }
+} 

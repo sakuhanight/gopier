@@ -2,10 +2,12 @@ package copier
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/sakuhanight/gopier/internal/filter"
 	"github.com/sakuhanight/gopier/internal/hasher"
 	"github.com/sakuhanight/gopier/internal/logger"
+	"github.com/sakuhanight/gopier/internal/permissions"
 	"github.com/sakuhanight/gopier/internal/stats"
 )
 
@@ -33,35 +36,38 @@ type ProgressCallback func(current, total int64, currentFile string)
 
 // Options はコピーオプションを表す構造体
 type Options struct {
-	BufferSize        int           // コピーバッファサイズ
-	Recursive         bool          // 再帰的にコピーするかどうか
-	PreserveModTime   bool          // 更新日時を保持するかどうか
-	VerifyHash        bool          // ハッシュ検証を行うかどうか
-	HashAlgorithm     string        // ハッシュアルゴリズム
-	OverwriteExisting bool          // 既存ファイルを上書きするかどうか
-	CreateDirs        bool          // 必要なディレクトリを作成するかどうか
-	MaxRetries        int           // 最大再試行回数
-	RetryDelay        time.Duration // 再試行の遅延時間
-	ProgressInterval  time.Duration // 進捗報告の間隔
-	MaxConcurrent     int           // 最大並行コピー数
-	Mode              CopyMode      // コピーモード
+	BufferSize          int           // コピーバッファサイズ
+	Recursive           bool          // 再帰的にコピーするかどうか
+	PreserveModTime     bool          // 更新日時を保持するかどうか
+	PreservePermissions bool          // ファイルアクセス権限を保持するかどうか（Windowsのみ）
+	VerifyHash          bool          // ハッシュ検証を行うかどうか
+	HashAlgorithm       string        // ハッシュアルゴリズム
+	OverwriteExisting   bool          // 既存ファイルを上書きするかどうか
+	CreateDirs          bool          // 必要なディレクトリを作成するかどうか
+	MaxRetries          int           // 最大再試行回数
+	RetryDelay          time.Duration // 再試行の遅延時間
+	ProgressInterval    time.Duration // 進捗報告の間隔
+	MaxConcurrent       int           // 最大並行コピー数
+	Mode                CopyMode      // コピーモード
+	TestCopyDelayPerByte time.Duration // テスト用: 1バイトごとにSleepする遅延
 }
 
 // DefaultOptions はデフォルトのオプションを返す
 func DefaultOptions() Options {
 	return Options{
-		BufferSize:        32 * 1024 * 1024, // 32MB
-		Recursive:         true,
-		PreserveModTime:   true,
-		VerifyHash:        true,
-		HashAlgorithm:     string(hasher.SHA256),
-		OverwriteExisting: true,
-		CreateDirs:        true,
-		MaxRetries:        3,
-		RetryDelay:        time.Second * 2,
-		ProgressInterval:  time.Second * 1,
-		MaxConcurrent:     4,
-		Mode:              ModeCopy,
+		BufferSize:          32 * 1024 * 1024, // 32MB
+		Recursive:           true,
+		PreserveModTime:     true,
+		PreservePermissions: false, // デフォルトでは無効（セキュリティ上の理由）
+		VerifyHash:          true,
+		HashAlgorithm:       string(hasher.SHA256),
+		OverwriteExisting:   true,
+		CreateDirs:          true,
+		MaxRetries:          3,
+		RetryDelay:          time.Second * 2,
+		ProgressInterval:    time.Second * 1,
+		MaxConcurrent:       4,
+		Mode:                ModeCopy,
 	}
 }
 
@@ -81,6 +87,10 @@ type FileCopier struct {
 	semaphore    chan struct{}
 	ctx          context.Context
 	cancel       context.CancelFunc
+	// エラー伝播用
+	errOnce       sync.Once
+	firstErr     error
+	fileList     []database.FileInfo
 }
 
 // NewFileCopier は新しいFileCopierを作成する
@@ -110,6 +120,13 @@ func NewFileCopier(sourceDir, destDir string, options Options, fileFilter *filte
 	}
 }
 
+// NewFileCopierWithList はファイルリスト指定型のFileCopierを作成する
+func NewFileCopierWithList(sourceDir, destDir string, options Options, fileFilter *filter.Filter, syncDB *database.SyncDB, log *logger.Logger, fileList []database.FileInfo) *FileCopier {
+	fc := NewFileCopier(sourceDir, destDir, options, fileFilter, syncDB, log)
+	fc.fileList = fileList
+	return fc
+}
+
 // SetProgressCallback は進捗報告のコールバック関数を設定する
 func (fc *FileCopier) SetProgressCallback(callback ProgressCallback) {
 	fc.progressFunc = callback
@@ -123,6 +140,16 @@ func (fc *FileCopier) GetStats() *stats.Stats {
 // Cancel はコピー処理をキャンセルする
 func (fc *FileCopier) Cancel() {
 	fc.cancel()
+}
+
+// SetTimeout はタイムアウト時間を設定する
+func (fc *FileCopier) SetTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		// 既存のコンテキストをキャンセル
+		fc.cancel()
+		// 新しいタイムアウト付きコンテキストを作成
+		fc.ctx, fc.cancel = context.WithTimeout(context.Background(), timeout)
+	}
 }
 
 // CopyFiles はファイルをコピーする
@@ -165,18 +192,35 @@ func (fc *FileCopier) CopyFiles() error {
 		return fmt.Errorf("ソースディレクトリ(%s)の確認エラー: %w", fc.sourceDir, err)
 	}
 
+	if len(fc.fileList) > 0 {
+		// fileListが指定されている場合、そのリストのみ同期
+		total := int64(len(fc.fileList))
+		for i, file := range fc.fileList {
+			relPath := file.Path
+			sourcePath := filepath.Join(fc.sourceDir, relPath)
+			destPath := filepath.Join(fc.destDir, relPath)
+			if fc.progressFunc != nil {
+				fc.progressFunc(int64(i+1), total, relPath)
+			}
+			if err := fc.copyFile(sourcePath, destPath); err != nil {
+				fc.stats.IncrementFailed()
+				if fc.logger != nil {
+					fc.logger.Error("ファイルコピー失敗: %s (%v)", relPath, err)
+				}
+				continue
+			}
+		}
+		return nil
+	}
+
 	// ソースがディレクトリの場合
 	if sourceInfo.IsDir() {
 		// 宛先ディレクトリの作成
 		if fc.options.CreateDirs {
 			if err := os.MkdirAll(fc.destDir, 0755); err != nil {
 				// loggerでエラー出力
-				if fc.logger != nil {
-					if fc.logger.Verbose {
-						fc.logger.Error("宛先ディレクトリ(%s)の作成エラー: %v", fc.destDir, err)
-					} else {
-						fc.logger.Error("宛先ディレクトリ作成失敗")
-					}
+				if fc.logger != nil && fc.logger.Verbose {
+					fc.logger.Error("宛先ディレクトリ(%s)の作成エラー: %v", fc.destDir, err)
 				}
 				return fmt.Errorf("宛先ディレクトリ(%s)の作成エラー: %w", fc.destDir, err)
 			}
@@ -256,6 +300,9 @@ func (fc *FileCopier) CopyFiles() error {
 		}
 	}
 
+	if fc.firstErr != nil {
+		return fc.firstErr
+	}
 	return err
 }
 
@@ -286,6 +333,72 @@ func (fc *FileCopier) copyDirectory(sourceDir, destDir string) error {
 				fc.logger.Error("宛先ディレクトリ(%s)の作成エラー: %v", destDir, err)
 			}
 			return fmt.Errorf("宛先ディレクトリ(%s)の作成エラー: %w", destDir, err)
+		}
+
+		// ディレクトリアクセス権限の保持（Windowsのみ）
+		if fc.options.PreservePermissions {
+			if permissions.CanCopyPermissions() {
+				fmt.Printf("DEBUG: Attempting to copy directory permissions: %s -> %s\n", sourceDir, destDir)
+
+				err = permissions.CopyDirectoryPermissions(sourceDir, destDir)
+				if err != nil {
+					if errors.Is(err, permissions.ErrDACLOnlyCopied) {
+						// DACLのみコピーの場合、DBに記録
+						if fc.db != nil {
+							relPath, _ := filepath.Rel(fc.destDir, destDir)
+							fileInfo := database.FileInfo{
+								Path:         relPath,
+								Status:       database.StatusSuccess,
+								LastSyncTime: time.Now(),
+								LastError:    "DACLのみコピー（所有者情報はコピー不可）",
+							}
+							fc.db.AddFile(fileInfo)
+						}
+						if fc.logger != nil {
+							relPath, _ := filepath.Rel(fc.destDir, destDir)
+							fc.logger.Info("DACLのみコピー: %s", relPath)
+						}
+						// エラー扱いにはしない
+						err = nil
+					} else {
+						// 詳細なエラー情報をログに記録
+						if fc.logger != nil {
+							if fc.logger.Verbose {
+								fc.logger.Warn("ディレクトリ権限のコピーエラー: %s -> %s: %v", sourceDir, destDir, err)
+							} else {
+								fc.logger.Warn("ディレクトリ権限コピー失敗: %s", filepath.Base(sourceDir))
+							}
+						}
+
+						// エラーの種類に応じた詳細情報を出力
+						errMsg := err.Error()
+						if strings.Contains(errMsg, "アクセス拒否") {
+							fmt.Printf("ERROR: ディレクトリアクセス拒否エラー - 管理者権限が必要です: %s\n", destDir)
+						} else if strings.Contains(errMsg, "特権不足") {
+							fmt.Printf("ERROR: ディレクトリ特権不足エラー - セキュリティ特権が必要です: %s\n", destDir)
+						} else if strings.Contains(errMsg, "This security ID may not be assigned as the owner") {
+							fmt.Printf("INFO: 所有者情報のコピーに失敗しましたが、アクセス権限（DACL）のコピーを試行します: %s\n", destDir)
+						} else if strings.Contains(errMsg, "エラー: <nil>") {
+							fmt.Printf("ERROR: ディレクトリ権限コピーエラー（詳細不明）: %s -> %s\n", sourceDir, destDir)
+							fmt.Printf("DEBUG: 完全なエラーメッセージ: %v\n", err)
+						} else {
+							fmt.Printf("ERROR: ディレクトリ権限コピーエラー: %s -> %s: %v\n", sourceDir, destDir, err)
+						}
+
+						// 権限コピーエラーは警告として記録するが、コピー処理は続行
+						fmt.Printf("INFO: ディレクトリ権限コピーに失敗しましたが、ファイルコピー処理は継続します\n")
+					}
+				}
+			} else {
+				// loggerで警告出力
+				if fc.logger != nil {
+					if fc.logger.Verbose {
+						fc.logger.Warn("ディレクトリ権限のコピーは現在のプラットフォームではサポートされていません")
+					} else {
+						fc.logger.Warn("ディレクトリ権限コピー非対応プラットフォーム")
+					}
+				}
+			}
 		}
 	}
 
@@ -368,6 +481,8 @@ func (fc *FileCopier) copyDirectory(sourceDir, destDir string) error {
 					relPath, _ := filepath.Rel(fc.sourceDir, src)
 					fc.logger.Error("ファイルコピーエラー: %s", relPath)
 				}
+				// エラーをfirstErrに記録
+				fc.errOnce.Do(func() { fc.firstErr = err })
 			}
 		}(sourcePath, destPath)
 	}
@@ -380,6 +495,7 @@ func (fc *FileCopier) copyFile(sourcePath, destPath string) error {
 	// コンテキストのキャンセル確認
 	select {
 	case <-fc.ctx.Done():
+		fmt.Println("CANCELLED") // contextキャンセル時のデバッグ出力
 		return fmt.Errorf("コピー処理がキャンセルされました")
 	default:
 	}
@@ -391,12 +507,15 @@ func (fc *FileCopier) copyFile(sourcePath, destPath string) error {
 	}
 
 	// 進捗報告
-	if fc.progressFunc != nil {
+	if fc.progressFunc != nil && fc.progressChan != nil {
 		select {
 		case fc.progressChan <- relPath:
 			// 正常に送信
 		default:
 			// チャンネルが閉じられているか、バッファが一杯
+		case <-fc.ctx.Done():
+			// コンテキストがキャンセルされた場合
+			return fc.ctx.Err()
 		}
 	}
 
@@ -665,7 +784,6 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 	// ソースファイルを開く
 	sourceFile, err := os.Open(sourcePath)
 	if err != nil {
-		// loggerでエラー出力
 		if fc.logger != nil && fc.logger.Verbose {
 			fc.logger.Error("ソースファイル(%s)を開けません: %v", sourcePath, err)
 		}
@@ -676,7 +794,6 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 	// 宛先ファイルを作成
 	destFile, err := os.Create(destPath)
 	if err != nil {
-		// loggerでエラー出力
 		if fc.logger != nil && fc.logger.Verbose {
 			fc.logger.Error("宛先ファイル(%s)を作成できません: %v", destPath, err)
 		}
@@ -684,44 +801,142 @@ func (fc *FileCopier) doCopyFile(sourcePath, destPath string, sourceInfo os.File
 	}
 	defer destFile.Close()
 
-	// バッファを作成
 	buffer := make([]byte, fc.options.BufferSize)
-
-	// ファイルをコピー
-	copiedBytes, err := io.CopyBuffer(destFile, sourceFile, buffer)
-	if err != nil {
-		// loggerでエラー出力
-		if fc.logger != nil && fc.logger.Verbose {
-			fc.logger.Error("ファイルコピーエラー: %s -> %s: %v", sourcePath, destPath, err)
+	var copiedBytes int64
+	for {
+		// contextキャンセル監視
+		select {
+		case <-fc.ctx.Done():
+			fmt.Println("CANCELLED") // contextキャンセル時のデバッグ出力
+			return fmt.Errorf("コピー処理がキャンセルされました")
+		default:
 		}
-		return fmt.Errorf("ファイルコピーエラー: %w", err)
+
+		n, readErr := sourceFile.Read(buffer)
+		if n > 0 {
+			// テスト用: 1バイトごとに遅延
+			if fc.options.TestCopyDelayPerByte > 0 {
+				for i := 0; i < n; i++ {
+					select {
+					case <-fc.ctx.Done():
+						fmt.Println("CANCELLED") // contextキャンセル時のデバッグ出力
+						return fmt.Errorf("コピー処理がキャンセルされました")
+					default:
+						fmt.Print(".") // デバッグ出力
+						time.Sleep(fc.options.TestCopyDelayPerByte)
+					}
+				}
+			}
+			wn, writeErr := destFile.Write(buffer[:n])
+			if writeErr != nil {
+				if fc.logger != nil && fc.logger.Verbose {
+					fc.logger.Error("ファイル書き込みエラー: %s -> %s: %v", sourcePath, destPath, writeErr)
+				}
+				return fmt.Errorf("ファイル書き込みエラー: %w", writeErr)
+			}
+			if wn != n {
+				return fmt.Errorf("書き込まれたバイト数が一致しません: 期待値=%d, 実際=%d", n, wn)
+			}
+			copiedBytes += int64(wn)
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			if fc.logger != nil && fc.logger.Verbose {
+				fc.logger.Error("ファイル読み取りエラー: %s: %v", sourcePath, readErr)
+			}
+			return fmt.Errorf("ファイル読み取りエラー: %w", readErr)
+		}
 	}
 
-	// コピーされたバイト数の確認
 	if copiedBytes != sourceInfo.Size() {
-		// loggerで警告出力
 		if fc.logger != nil && fc.logger.Verbose {
 			fc.logger.Warn("コピーされたバイト数が一致しません: 期待値=%d, 実際=%d", sourceInfo.Size(), copiedBytes)
 		}
 	}
 
-	// ファイルを閉じる（エラーチェック付き）
 	if err = destFile.Close(); err != nil {
-		// loggerでエラー出力
 		if fc.logger != nil && fc.logger.Verbose {
 			fc.logger.Error("宛先ファイル(%s)を閉じられません: %v", destPath, err)
 		}
 		return fmt.Errorf("宛先ファイル(%s)を閉じられません: %w", destPath, err)
 	}
 
-	// 更新日時の保持
 	if fc.options.PreserveModTime {
 		if err = os.Chtimes(destPath, time.Now(), sourceInfo.ModTime()); err != nil {
-			// loggerでエラー出力
 			if fc.logger != nil && fc.logger.Verbose {
 				fc.logger.Error("更新日時の設定エラー: %s: %v", destPath, err)
 			}
 			return fmt.Errorf("更新日時の設定エラー: %w", err)
+		}
+	}
+
+	if fc.options.PreservePermissions {
+		if permissions.CanCopyPermissions() {
+			fmt.Printf("DEBUG: Attempting to copy file permissions: %s -> %s\n", sourcePath, destPath)
+
+			err = permissions.CopyFilePermissions(sourcePath, destPath)
+			if err != nil {
+				if errors.Is(err, permissions.ErrDACLOnlyCopied) {
+					if fc.db != nil {
+						relPath, _ := filepath.Rel(fc.destDir, destPath)
+						fileInfo := database.FileInfo{
+							Path:         relPath,
+							Status:       database.StatusSuccess,
+							LastSyncTime: time.Now(),
+							LastError:    "DACLのみコピー（所有者情報はコピー不可）",
+						}
+						fc.db.AddFile(fileInfo)
+					}
+					if fc.logger != nil {
+						relPath, _ := filepath.Rel(fc.destDir, destPath)
+						fc.logger.Info("DACLのみコピー: %s", relPath)
+					}
+					err = nil
+				} else {
+					if fc.logger != nil {
+						if fc.logger.Verbose {
+							fc.logger.Warn("ファイル権限のコピーエラー: %s -> %s: %v", sourcePath, destPath, err)
+						} else {
+							fc.logger.Warn("権限コピー失敗: %s", filepath.Base(sourcePath))
+						}
+					}
+
+					errMsg := err.Error()
+					if strings.Contains(errMsg, "アクセス拒否") {
+						fmt.Printf("ERROR: アクセス拒否エラー - 管理者権限が必要です: %s\n", destPath)
+					} else if strings.Contains(errMsg, "特権不足") {
+						fmt.Printf("ERROR: 特権不足エラー - セキュリティ特権が必要です: %s\n", destPath)
+					} else if strings.Contains(errMsg, "This security ID may not be assigned as the owner") {
+						fmt.Printf("INFO: 所有者情報のコピーに失敗しましたが、アクセス権限（DACL）のコピーを試行します: %s\n", destPath)
+					} else if strings.Contains(errMsg, "エラー: <nil>") {
+						fmt.Printf("ERROR: ファイル権限コピーエラー（詳細不明）: %s -> %s\n", sourcePath, destPath)
+						fmt.Printf("DEBUG: 完全なエラーメッセージ: %v\n", err)
+					} else {
+						fmt.Printf("ERROR: 権限コピーエラー: %s -> %s: %v\n", sourcePath, destPath, err)
+					}
+
+					fmt.Printf("INFO: ファイル権限コピーに失敗しましたが、ファイルコピー処理は継続します\n")
+				}
+			} else {
+				if fc.logger != nil {
+					if fc.logger.Verbose {
+						fc.logger.Info("ファイル権限をコピーしました: %s", destPath)
+					} else {
+						fc.logger.Info("権限コピー成功: %s", filepath.Base(sourcePath))
+					}
+				}
+				fmt.Printf("DEBUG: Successfully copied file permissions: %s\n", destPath)
+			}
+		} else {
+			if fc.logger != nil {
+				if fc.logger.Verbose {
+					fc.logger.Warn("ファイル権限のコピーは現在のプラットフォームではサポートされていません")
+				} else {
+					fc.logger.Warn("権限コピー非対応プラットフォーム")
+				}
+			}
 		}
 	}
 

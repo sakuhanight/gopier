@@ -97,5 +97,12 @@ test_data/
 test_sync.db
 test_export.* 
 
+# coverageレポートを無視
+coverage.html
+
 # Config files
 .gopier.yaml
+
+# AWS Runner configuration
+aws-runner-config.env
+*.env
